@@ -12,3 +12,4 @@ from .attacker_knowledge import (
 )
 from .mia import TargetedMIA
 from .aia import TargetedAIA
+from .utils import extend_threat_model

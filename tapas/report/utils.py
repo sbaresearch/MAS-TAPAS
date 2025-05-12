@@ -92,7 +92,8 @@ def metric_comparison_plots(
             axs[i].legend([], [], frameon=False)
             axs[i].set_ylabel(metric, fontsize=20)
             axs[i].set_xlabel("")
-            axs[i].set_ylim(axis_ranges[metric])
+            if metric in axis_ranges:
+                axs[i].set_ylim(axis_ranges[metric])
 
         axs[-1].set_xlabel(f"{comparison_label}s".capitalize(), fontsize=20)
 

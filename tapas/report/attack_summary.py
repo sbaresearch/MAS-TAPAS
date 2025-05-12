@@ -564,4 +564,18 @@ class BinaryAIAttackSummary(AIAttackSummary, BinaryLabelInferenceAttackSummary):
         )
 
 
-## TODO: CLEAN UP WITH GET_HEADERS ETC?
+class ExtendedAttackSummary():
+
+    def __init__(self, original_attack_summary,  *args, **kwargs):
+        self.extra_metrics = kwargs.pop("extra_metrics", None)
+        self._original_instance = original_attack_summary(*args, **kwargs)
+    
+    def get_metrics(self):
+        return pd.concat(
+                [self._original_instance.get_metrics(), 
+                 pd.DataFrame([[ex(self.labels, self.predictions) for ex in self.extra_metrics]], columns=[ex.__name__ for ex in self.extra_metrics],)], axis=1
+        )
+
+    def __getattr__(self, name):
+        # Delegate attribute access to the original instance
+        return getattr(self._original_instance, name)
