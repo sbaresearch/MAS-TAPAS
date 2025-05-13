@@ -24,3 +24,4 @@ from .synthinference import (
 )
 from .domias import DOMIASAttack
 from .ml_attack import MLAttack
+from .utils import evaluate_basic_available_attacks
