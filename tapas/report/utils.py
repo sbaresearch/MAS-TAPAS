@@ -68,7 +68,8 @@ def metric_comparison_plots(
 
     """
     set_style()
-
+    metrics = list(set(data.columns).intersection(set(metrics)))
+    print(metrics)
     for pair_name, pair in data.groupby(fixed_pair_label):
         fig, axs = plt.subplots(len(metrics), sharex=True)
 

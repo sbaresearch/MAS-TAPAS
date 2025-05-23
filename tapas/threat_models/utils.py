@@ -15,7 +15,7 @@ def extend_threat_model(threat_model, extra_metrics):
         else:
             ReportClass = AIAttackSummary
 
-    class ExtendedClass(cls):
+    class ExtendedThreatModel(cls):
         def __init__(self, super_obj, extra_metrics):
             self.extra_metrics = extra_metrics
             for k, v in vars(super_obj).items():
@@ -38,4 +38,4 @@ def extend_threat_model(threat_model, extra_metrics):
                 **kwargs
             )
         
-    return ExtendedClass(threat_model, extra_metrics)
+    return ExtendedThreatModel(threat_model, extra_metrics)
