@@ -10,7 +10,6 @@ docs/build
 docs/source/_autosummary
 *~
 */tapas_report*
-examples/multiple_aia
-examples/multiple_mia
 examples/*/*.png
+examples/reporting/*
 tapas/tests/output/*

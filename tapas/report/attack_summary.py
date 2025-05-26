@@ -568,12 +568,13 @@ class ExtendedAttackSummary():
 
     def __init__(self, original_attack_summary,  *args, **kwargs):
         self.extra_metrics = kwargs.pop("extra_metrics", None)
+        self.extra_metrics_names = kwargs.pop("extra_metrics_names", None)
         self._original_instance = original_attack_summary(*args, **kwargs)
     
     def get_metrics(self):
         return pd.concat(
                 [self._original_instance.get_metrics(), 
-                 pd.DataFrame([[ex(self.labels, self.predictions) for ex in self.extra_metrics]], columns=[ex.__name__ for ex in self.extra_metrics],)], axis=1
+                 pd.DataFrame([[ex(self.labels, self.predictions) for ex in self.extra_metrics]], columns=self.extra_metrics_names if self.extra_metrics_names is not None else [ex.__name__ for ex in self.extra_metrics],)], axis=1
         )
 
     def __getattr__(self, name):

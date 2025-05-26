@@ -1,7 +1,7 @@
 from ..report import ExtendedAttackSummary, MIAttackSummary, AIAttackSummary, BinaryAIAttackSummary
 from .aia import TargetedAIA
 
-def extend_threat_model(threat_model, extra_metrics):
+def extend_threat_model(threat_model, extra_metrics, extra_metrics_names=None):
     
     cls = type(threat_model)
 
@@ -16,8 +16,9 @@ def extend_threat_model(threat_model, extra_metrics):
             ReportClass = AIAttackSummary
 
     class ExtendedThreatModel(cls):
-        def __init__(self, super_obj, extra_metrics):
+        def __init__(self, super_obj, extra_metrics, extra_metrics_names=None):
             self.extra_metrics = extra_metrics
+            self.extra_metrics_names = extra_metrics_names
             for k, v in vars(super_obj).items():
                 setattr(self, k, v)
 
@@ -35,7 +36,8 @@ def extend_threat_model(threat_model, extra_metrics):
                 dataset_info=self.atk_know_data.label,
                 target_id=self.target_record.label,
                 extra_metrics = self.extra_metrics,
+                extra_metrics_names = self.extra_metrics_names,
                 **kwargs
             )
         
-    return ExtendedThreatModel(threat_model, extra_metrics)
+    return ExtendedThreatModel(threat_model, extra_metrics, extra_metrics_names)
