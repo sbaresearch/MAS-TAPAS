@@ -5,7 +5,7 @@ description = ""
 authors = ["Florimond Houussiau <fhoussiau@turing.ac.uk>", "James Jordon", "Callum Mole <cmole@turing.ac.uk>", "Camila Rangel-Smith <crangelsmith@turing.ac.uk>", "James Geddes <jgeddes@turing.ac.uk>"]
 
 [tool.poetry.dependencies]
-python = ">=3.9, <3.11"
+python = ">=3.9, <3.12"
 matplotlib = ">=3.4.3"
 palettable = "^3.3.0"
 seaborn = "^0.12.1"

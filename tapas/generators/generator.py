@@ -115,3 +115,27 @@ class GeneratorFromExecutable(Generator):
     @property
     def label(self):
         return self._label
+
+class NoBoxGenerator(Generator):
+    """This generator samples from the synthetic data."""
+    def __init__(self, synthetic_data, label="NoBoxGenerator"):
+        super().__init__()
+        self.dataset = synthetic_data
+        self._label = label
+
+    def fit(self, dataset):
+        self.trained = True
+
+    def generate(self, num_samples = None, random_state = None):
+        if self.trained: 
+            return self.dataset.sample(num_samples, random_state = random_state)
+        else:
+            raise RuntimeError("No dataset provided to generator")
+        
+    def __call__(self, dataset, num_samples, random_state = None):
+        self.fit(dataset)
+        return self.generate(num_samples, random_state = random_state)
+
+    @property
+    def label(self):
+        return self._label

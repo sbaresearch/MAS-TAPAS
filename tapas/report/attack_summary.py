@@ -566,15 +566,20 @@ class BinaryAIAttackSummary(AIAttackSummary, BinaryLabelInferenceAttackSummary):
 
 class ExtendedAttackSummary():
 
-    def __init__(self, original_attack_summary,  *args, **kwargs):
-        self.extra_metrics = kwargs.pop("extra_metrics", None)
-        self.extra_metrics_names = kwargs.pop("extra_metrics_names", None)
+    def __init__(self, original_attack_summary, *args, **kwargs):
+        extra_metrics = kwargs.pop("extra_metrics", None)
+        extra_metrics_names = kwargs.pop("extra_metrics_names", None)
+        
+        if extra_metrics_names is None and extra_metrics is not None:
+            extra_metrics_names = [ex.__name__ for ex in extra_metrics]
+        
         self._original_instance = original_attack_summary(*args, **kwargs)
+        self.extra_metrics = {name: [metric(self._original_instance.labels, self._original_instance.predictions)] for name, metric in zip(extra_metrics_names, extra_metrics)}
     
     def get_metrics(self):
         return pd.concat(
                 [self._original_instance.get_metrics(), 
-                 pd.DataFrame([[ex(self.labels, self.predictions) for ex in self.extra_metrics]], columns=self.extra_metrics_names if self.extra_metrics_names is not None else [ex.__name__ for ex in self.extra_metrics],)], axis=1
+                 pd.DataFrame(self.extra_metrics)], axis=1
         )
 
     def __getattr__(self, name):
