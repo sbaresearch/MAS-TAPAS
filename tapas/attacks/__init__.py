@@ -22,3 +22,4 @@ from .synthinference import (
     sklearnDensityEstimator,
     SyntheticPredictorAttack,
 )
+from .ml_attack import MLAttack
