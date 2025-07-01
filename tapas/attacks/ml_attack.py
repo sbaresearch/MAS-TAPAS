@@ -139,7 +139,6 @@ class MLAttack(Attack):
             self.categorical_columns += [threat_model.sensitive_attribute]
         else: 
             self.numerical_columns += [threat_model.sensitive_attribute]
-
             
         # Preprocess numerical columns
         num_transformer = Pipeline(steps=[
@@ -163,57 +162,51 @@ class MLAttack(Attack):
             remainder='passthrough'
         )
 
-        
-        train_data=pd.DataFrame(self.preprocessor.fit_transform(real_data.data))
+        self.preprocessor.fit(real_data.data)
 
         if self.categorical:
             mapping = {cat: i for i, cat in enumerate(self.preprocessor.named_transformers_['categorical'].named_steps['encoder'].categories_[-1])}
             if len(list(set(mapping.values()).difference(set(threat_model.attribute_values)))) !=0:
                 raise ValueError(f'The preprocessor yield different mapping ({mapping}) than provided possible values ({threat_model.attribute_values})')
+            
+        target_data=pd.DataFrame(self.preprocessor.transform(self.threat_model.target_record.data),
+                                 columns=self.preprocessor.get_feature_names_out())
+        self.target_data_x = target_data[self.quasi_identifiers]
 
-
-        train_data.columns= self.preprocessor.get_feature_names_out() 
-    
-        X_train = train_data[self.quasi_identifiers]
-        y_train = train_data[threat_model.sensitive_attribute].astype(int)     
-
-        for model_name, model in self.estimators.items():
-            model.fit(X_train,y_train)
-        
-        self.trained = True
-
+        self.trained = True        
 
     def attack(self, datasets: List[pd.DataFrame]) -> List[int]:
         """
         For membership-style output: for each dataset, return best guess (majority vote) of target attribute.
         """
-        assert self.trained, "Train before attacking."
-        assert len(datasets[0]) == 1, 'Synthetic datasets should have one record each'
+            
+        return self.attack_score(datasets, False)
 
-        df =  pd.concat([data.data for data in datasets])
-        test_data=pd.DataFrame(self.preprocessor.transform(df),columns=self.preprocessor.get_feature_names_out()) 
-
-        y_preds = []
-        for name, model in self.estimators.items():
-            y_pred_m = model.predict(test_data[self.quasi_identifiers])
-            y_preds.append(y_pred_m)
-        
-        predictions = y_preds[0] if len(y_preds) == 1 else self.ensemble_function(y_preds)
-        return predictions
-
-    def attack_score(self, datasets: List[pd.DataFrame]) -> List[float]:
+    def attack_score(self, datasets: List[pd.DataFrame], proba=True) -> List[float]:
         assert self.trained, "Attack must first be trained."
 
-        df =  pd.concat([data.data for data in datasets])
-        test_data=pd.DataFrame(self.preprocessor.transform(df),columns=self.preprocessor.get_feature_names_out())
+        result = []
+
+        for dataset in datasets:
+            train_data=pd.DataFrame(self.preprocessor.transform(dataset.data),
+                                 columns=self.preprocessor.get_feature_names_out())
         
-        y_scores = []
-        for name, model in self.estimators.items():
-            y_score_m = model.predict_proba(test_data[self.quasi_identifiers])
-            y_scores.append(y_score_m)
-        
-        scores = y_scores[0][:,1] if len(y_scores) == 1 else self.ensemble_function(np.array(y_scores)[:,:,1])
-        return scores
+            X_train = train_data[self.quasi_identifiers]
+            y_train = train_data[self.threat_model.sensitive_attribute].astype(int)     
+
+            for model_name, model in self.estimators.items():
+                model.fit(X_train,y_train)
+ 
+            y_preds = []
+            for name, model in self.estimators.items():
+                y_preds.append(model.predict(self.target_data_x) if not proba else model.predict_proba(self.target_data_x))
+            
+            if proba:
+                result.append(y_preds[0][:,1] if len(y_preds) == 1 else self.ensemble_function(np.array(y_preds)[:,:,1]))
+            else:
+                result.append(y_preds[0] if len(y_preds) == 1 else self.ensemble_function(y_preds))
+
+        return result
     
     @property
     def label(self):

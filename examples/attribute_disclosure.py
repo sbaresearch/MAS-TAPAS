@@ -34,18 +34,19 @@ synth_dataset = tapas.datasets.TabularDataset.read(
 generator = tapas.generators.NoBoxGenerator(real_dataset, 'RealDataGenerator')
 generator2 = tapas.generators.NoBoxGenerator(synth_dataset, 'SynthetiDataGenerator')
 
-target_record = real_dataset.get_records([1])
-real_dataset.drop_records([1], in_place=True)
+target_ids = list(range(5))
+target_record = real_dataset.get_records(target_ids)
+real_dataset.drop_records(target_ids, in_place=True)
 # Select the auxiliary data + black-box attack model.
 data_knowledge = tapas.threat_models.ExactDataKnowledge(
     real_dataset
 )
 
 sdg_knowledge = tapas.threat_models.BlackBoxKnowledge(
-    generator, num_synthetic_records=1,
+    generator, num_synthetic_records=1000,
 )
 sdg_knowledge2 = tapas.threat_models.BlackBoxKnowledge(
-    generator2, num_synthetic_records=1,
+    generator2, num_synthetic_records=1000,
 )
 
 threat_model = tapas.threat_models.TargetedAIA(
@@ -88,9 +89,10 @@ for attack in attacks:
     summaries.append(threat_model_extended2.test(attack, num_samples=100))
 
 report = tapas.report.MIAttackReport(summaries, metrics=['accuracy', 'f1_macro', 'auc'])
-print(report.attacks_data)
 
 report.publish('attribute_disclosure')
+print(report.attacks_data)
+
 
 
 
