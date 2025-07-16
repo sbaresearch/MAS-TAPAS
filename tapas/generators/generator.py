@@ -7,6 +7,7 @@ from io import StringIO
 import subprocess
 from subprocess import PIPE
 from ..datasets import TabularDataset
+import mlflow
 
 
 class Generator(ABC):
@@ -139,3 +140,42 @@ class NoBoxGenerator(Generator):
     @property
     def label(self):
         return self._label
+    
+class GeneratorFromMLflow(Generator):
+
+    def __init__(self, tracking_uri, model_name, model_version=None, label="GeneratorFromMLflow"):
+        super().__init__()
+        self.tracking_uri = tracking_uri
+        self.model_name = model_name
+        self.model_version = model_version
+        self._label = label
+    
+    def fit(self, dataset: TabularDataset):
+        mlflow.set_tracking_uri(self.tracking_uri)
+        client = mlflow.MlflowClient(tracking_uri=self.tracking_uri) 
+        if self.model_version == None:
+            model_info = client.get_registered_model(self.model_name)
+            if len(model_info.latest_versions)>1:
+                self.model_version = model_info.latest_versions[0].version
+            else:
+                self.model_version=1
+        
+        model_uri = f"models:/{self.model_name}/{self.model_version}"
+        self.loaded_model = mlflow.pyfunc.load_model(model_uri)
+
+        self.trained=True
+        self.data_desc = dataset.description
+    
+    def generate(self, num_samples):
+        output_data = self.loaded_model.predict(num_samples,{})
+        
+        return TabularDataset(output_data, self.data_desc) 
+
+    def __call__(self, dataset, num_samples):
+        self.fit(dataset)
+        return self.generate(num_samples)
+
+    @property
+    def label(self):
+        return self._label
+    

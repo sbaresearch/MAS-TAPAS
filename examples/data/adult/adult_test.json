@@ -16,7 +16,8 @@
             "nan",
             "Self-emp-inc",
             "Without-pay",
-            "Never-worked"
+            "Never-worked", 
+            "?"
         ]
     },
     {
@@ -72,7 +73,8 @@
             "nan",
             "Protective-serv",
             "Armed-Forces",
-            "Priv-house-serv"
+            "Priv-house-serv",
+            "?"
         ]
     },
     {
@@ -166,7 +168,8 @@
             "Hong",
             "Ireland",
             "Hungary",
-            "Holand-Netherlands"
+            "Holand-Netherlands",
+            "?"
         ]
     },
     {

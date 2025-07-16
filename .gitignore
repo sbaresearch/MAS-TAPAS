@@ -12,4 +12,6 @@ docs/source/_autosummary
 */tapas_report*
 examples/*/*.png
 examples/reporting/*
+examples/mlruns
+examples/artifacts
 tapas/tests/output/*
