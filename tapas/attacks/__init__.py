@@ -22,4 +22,5 @@ from .synthinference import (
     sklearnDensityEstimator,
     SyntheticPredictorAttack,
 )
+from .domias import DOMIASAttack
 from .ml_attack import MLAttack
