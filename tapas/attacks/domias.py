@@ -65,13 +65,6 @@ class DOMIASAttack(Attack):
                     continuous.append(1)
 
             self.norm = normal_func_feat(self.reference_set, continuous)
-        elif self.density_estimator == "bnaf":
-            _, self.p_R_model = density_estimator_trainer(
-                    self.reference_set, 
-                    epochs=25,
-                    verbose=self.verbose)
-        elif self.density_estimator == "kde":
-            self.density_data = stats.gaussian_kde(self.reference_set.transpose(1, 0))
         
         self.trained = True
 
