@@ -226,7 +226,7 @@ def set_style():
             "xtick.rotation": 45,
             "ytick.color": "k",
             "font.family": "sans-serif",
-            "font.sans-serif": "Tahoma",
+            "font.sans-serif": ["Tahoma", "DejaVu Sans", "Arial", "Liberation Sans"],
             "text.usetex": True,
         },
     )
@@ -234,7 +234,7 @@ def set_style():
     plt.rcParams.update(
         {
             "font.family": "sans-serif",
-            "font.sans-serif": "Tahoma",
+            "font.sans-serif": ["Tahoma", "DejaVu Sans", "Arial", "Liberation Sans"],
             "font.size": 10,
             "xtick.labelsize": 14,
             "ytick.labelsize": 14,
