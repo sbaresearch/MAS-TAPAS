@@ -14,8 +14,7 @@ if TYPE_CHECKING:
 from ..threat_models import LabelInferenceThreatModel, TargetedAIA, NoBoxKnowledge
 
 from abc import ABC, abstractmethod
-
-
+    
 class Attack(ABC):
     """
     Abstract base class for all privacy attacks.
