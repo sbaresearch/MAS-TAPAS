@@ -1,3 +1,5 @@
+# from BNAF (De Cao et al., 2018), https://github.com/nicola-decao/BNAF
+
 from typing import Optional, Tuple
 
 from geomloss import SamplesLoss

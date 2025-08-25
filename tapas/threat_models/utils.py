@@ -3,8 +3,10 @@ from .aia import TargetedAIA
 
 def extend_threat_model(threat_model, extra_metrics, extra_metrics_names=None):
     
+    # Get the class of the original threat model to inherit from so isinstance() works
     cls = type(threat_model)
 
+    # Define the appropriate ReportClass and kwargs based on threat model type
     ReportClass = MIAttackSummary
     kwargs = {}
     if isinstance(threat_model, TargetedAIA):
@@ -19,13 +21,16 @@ def extend_threat_model(threat_model, extra_metrics, extra_metrics_names=None):
         def __init__(self, super_obj, extra_metrics, extra_metrics_names=None):
             self.extra_metrics = extra_metrics
             self.extra_metrics_names = extra_metrics_names
+            # Copy attributes from the original threat model
             for k, v in vars(super_obj).items():
                 setattr(self, k, v)
 
         def _wrap_output(self, truth_labels, pred_labels, scores, attack):
+            # If no extra metrics, return the original summary
             if len(self.extra_metrics) == 0:
                 return cls._wrap_output(self, truth_labels, pred_labels, scores, attack)
             
+            # Otherwise, return the extended summary
             return ExtendedAttackSummary(
                 ReportClass,
                 truth_labels,

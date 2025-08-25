@@ -1,4 +1,6 @@
-# stdlib
+# from BNAF (De Cao et al., 2018), https://github.com/nicola-decao/BNAF
+
+# # stdlib
 from pathlib import Path
 from typing import Any, Callable, List, Optional, Tuple
 

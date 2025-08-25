@@ -120,7 +120,7 @@ class MLAttack(Attack):
         num_samples: int = None
     ):
         """
-        num_samples: not used, leaft so it follows Attack interface
+        Train the attack by fitting the preprocessor and preparing the data.
         """
         assert isinstance(threat_model, LabelInferenceThreatModel), \
             "Need LabelInferenceThreatModel (e.g. TargetedAIA)."
