@@ -1,0 +1,183 @@
+[
+    {
+        "name": "age",
+        "type": "countable/ordered",
+        "representation": "integer"
+    },
+    {
+        "name": "workclass",
+        "type": "finite",
+        "representation": [
+            "State-gov",
+            "Self-emp-not-inc",
+            "Private",
+            "Federal-gov",
+            "Local-gov",
+            "nan",
+            "Self-emp-inc",
+            "Without-pay",
+            "Never-worked",
+            "?"
+        ]
+    },
+    {
+        "name": "education",
+        "type": "finite",
+        "representation": [
+            "Bachelors",
+            "HS-grad",
+            "11th",
+            "Masters",
+            "9th",
+            "Some-college",
+            "Assoc-acdm",
+            "Assoc-voc",
+            "7th-8th",
+            "Doctorate",
+            "Prof-school",
+            "5th-6th",
+            "10th",
+            "1st-4th",
+            "Preschool",
+            "12th"
+        ]
+    },
+    {
+        "name": "marital_status",
+        "type": "finite",
+        "representation": [
+            "Never-married",
+            "Married-civ-spouse",
+            "Divorced",
+            "Married-spouse-absent",
+            "Separated",
+            "Married-AF-spouse",
+            "Widowed"
+        ]
+    },
+    {
+        "name": "occupation",
+        "type": "finite",
+        "representation": [
+            "Adm-clerical",
+            "Exec-managerial",
+            "Handlers-cleaners",
+            "Prof-specialty",
+            "Other-service",
+            "Sales",
+            "Craft-repair",
+            "Transport-moving",
+            "Farming-fishing",
+            "Machine-op-inspct",
+            "Tech-support",
+            "nan",
+            "Protective-serv",
+            "Armed-Forces",
+            "Priv-house-serv",
+            "?"
+        ]
+    },
+    {
+        "name": "relationship",
+        "type": "finite",
+        "representation": [
+            "Not-in-family",
+            "Husband",
+            "Wife",
+            "Own-child",
+            "Unmarried",
+            "Other-relative"
+        ]
+    },
+    {
+        "name": "race",
+        "type": "finite",
+        "representation": [
+            "White",
+            "Black",
+            "Asian-Pac-Islander",
+            "Amer-Indian-Eskimo",
+            "Other"
+        ]
+    },
+    {
+        "name": "sex",
+        "type": "finite",
+        "representation": [
+            "Male",
+            "Female"
+        ]
+    },
+    {
+        "name": "capital_gain",
+        "type": "countable/ordered",
+        "representation": "integer"
+    },
+    {
+        "name": "capital_loss",
+        "type": "countable/ordered",
+        "representation": "integer"
+    },
+    {
+        "name": "hours_per_week",
+        "type": "countable/ordered",
+        "representation": "integer"
+    },
+    {
+        "name": "native_country",
+        "type": "finite",
+        "representation": [
+            "United-States",
+            "Cuba",
+            "Jamaica",
+            "India",
+            "nan",
+            "Mexico",
+            "South",
+            "Puerto-Rico",
+            "Honduras",
+            "England",
+            "Canada",
+            "Germany",
+            "Iran",
+            "Philippines",
+            "Italy",
+            "Poland",
+            "Columbia",
+            "Cambodia",
+            "Thailand",
+            "Ecuador",
+            "Laos",
+            "Taiwan",
+            "Haiti",
+            "Portugal",
+            "Dominican-Republic",
+            "El-Salvador",
+            "France",
+            "Guatemala",
+            "China",
+            "Japan",
+            "Yugoslavia",
+            "Peru",
+            "Outlying-US(Guam-USVI-etc)",
+            "Scotland",
+            "Trinadad&Tobago",
+            "Greece",
+            "Nicaragua",
+            "Vietnam",
+            "Hong",
+            "Ireland",
+            "Hungary",
+            "Holand-Netherlands",
+            "?"
+        ]
+    },
+    {
+        "name": "income",
+        "type": "finite",
+        "representation": [
+            "<=50K",
+            ">50K"
+        ]
+    }
+]

@@ -25,12 +25,12 @@ DEFAULT_METRICS = [
 
 # configurable axis ranges
 axis_ranges = {
-    "accuracy": (0, 1),
-    "true_positive_rate": (0, 1),
-    "false_positive_rate": (0, 1),
+    "accuracy": (-0.2, 1.2),
+    "true_positive_rate": (-0.2, 1.2),
+    "false_positive_rate": (-0.2, 1.2),
     "mia_advantage": (-0.2, 1.2),
     "privacy_gain": (-0.2, 1.2),
-    "auc": (0, 1),
+    "auc": (-0.2, 1.2),
     "effective_epsilon": (0, 10),
 }
 color_pal = sns.color_palette("colorblind", 10)
@@ -38,6 +38,7 @@ color_pal = sns.color_palette("colorblind", 10)
 
 def metric_comparison_plots(
     data, comparison_label, fixed_pair_label, metrics, marker_label, output_path,
+    include_one_marker_plots = True
 ):
 
     """
@@ -61,6 +62,9 @@ def metric_comparison_plots(
         'attack' or 'target_id'.
     output_path: str
         Path where the figure is to be saved.
+    include_one_marker_plots: boolean
+        Create also the plots where there is only one item in the legend.
+
 
     Returns
     -------
@@ -68,8 +72,12 @@ def metric_comparison_plots(
 
     """
     set_style()
-
+    metrics = list(set(data.columns).intersection(set(metrics)))
     for pair_name, pair in data.groupby(fixed_pair_label):
+        
+        if len(pair) <= 1 and not include_one_marker_plots:
+            continue
+
         fig, axs = plt.subplots(len(metrics), sharex=True)
 
         for i, metric in enumerate(metrics):
@@ -92,17 +100,19 @@ def metric_comparison_plots(
             axs[i].legend([], [], frameon=False)
             axs[i].set_ylabel(metric, fontsize=20)
             axs[i].set_xlabel("")
-            axs[i].set_ylim(axis_ranges[metric])
+            if metric in axis_ranges:
+                axs[i].set_ylim(axis_ranges[metric])
 
         axs[-1].set_xlabel(f"{comparison_label}s".capitalize(), fontsize=20)
 
         handles, labels = axs[i].get_legend_handles_labels()
+        fig.subplots_adjust(right=0.82)
         fig.legend(
             handles,
             labels,
             loc="center right",
             prop={"size": 20},
-            bbox_to_anchor=(0.75, 0.25, 0.25, 0.3),
+            bbox_to_anchor=(1.05, 0.5),
         )
 
         fig.suptitle(
@@ -120,7 +130,7 @@ def metric_comparison_plots(
         if not os.path.exists(dirname):
             os.makedirs(dirname)
 
-        plt.savefig(filename)
+        plt.savefig(filename, bbox_inches='tight')
 
         plt.close(fig)
 
@@ -216,7 +226,7 @@ def set_style():
             "xtick.rotation": 45,
             "ytick.color": "k",
             "font.family": "sans-serif",
-            "font.sans-serif": "Tahoma",
+            "font.sans-serif": ["Tahoma", "DejaVu Sans", "Arial", "Liberation Sans"],
             "text.usetex": True,
         },
     )
@@ -224,7 +234,7 @@ def set_style():
     plt.rcParams.update(
         {
             "font.family": "sans-serif",
-            "font.sans-serif": "Tahoma",
+            "font.sans-serif": ["Tahoma", "DejaVu Sans", "Arial", "Liberation Sans"],
             "font.size": 10,
             "xtick.labelsize": 14,
             "ytick.labelsize": 14,

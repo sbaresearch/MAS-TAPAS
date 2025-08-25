@@ -28,7 +28,7 @@ In `BibTex`:
 ## Direct Installation
 
 ### Requirements
-The framework and its building blocks have been developed and tested under Python 3.9.
+The framework and its building blocks have been developed and tested under Python 3.11.
 
 
 #### Poetry installation

@@ -1,4 +1,4 @@
-from .attack_summary import MIAttackSummary, AIAttackSummary, BinaryAIAttackSummary
+from .attack_summary import MIAttackSummary, AIAttackSummary, BinaryAIAttackSummary, ExtendedAttackSummary
 from .report import (
     BinaryLabelAttackReport,
     MIAttackReport,

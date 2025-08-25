@@ -114,7 +114,7 @@ class BinaryLabelAttackReport(Report):
         self.attacks_data = summaries
         self.metrics = metrics or DEFAULT_METRICS
 
-    def compare(self, comparison_column, fixed_pair_columns, marker_column, filepath):
+    def compare(self, comparison_column, fixed_pair_columns, marker_column, filepath, include_one_marker_plots=True):
         """
         For a fixed pair of datasets-attacks-generators-target available in the data make a figure comparing
         performance between metrics. Options configure which dimension to compare against. Figures are saved to disk.
@@ -132,6 +132,8 @@ class BinaryLabelAttackReport(Report):
             'attack' or 'target_id'.
         filepath: str
             Path where the figure is to be saved.
+        include_one_marker_plots: boolean
+            Create also the plots where there is only one item in the legend.
 
         Returns
         -------
@@ -146,11 +148,12 @@ class BinaryLabelAttackReport(Report):
             metrics=self.metrics,
             marker_label=marker_column,
             output_path=filepath,
+            include_one_marker_plots = include_one_marker_plots
         )
 
         return None
 
-    def publish(self, filepath):
+    def publish(self, filepath, include_one_marker_plots = True):
         """
         Make all comparison plots and save them to disk.
 
@@ -158,6 +161,8 @@ class BinaryLabelAttackReport(Report):
         ----------
         filepath: str
             Path where the figure is to be saved.
+        include_one_marker_plots: boolean
+            Create also the plots where there is only one item in the legend.
 
         Returns
         -------
@@ -166,22 +171,22 @@ class BinaryLabelAttackReport(Report):
         """
 
         # compare generators and target ids for fixed dataset-atacks
-        self.compare("generator", ["dataset", "attack"], "target_id", filepath)
+        self.compare("generator", ["dataset", "attack"], "target_id", filepath, include_one_marker_plots)
 
         # compare attacks and target ids for fixed dataset-generators
-        self.compare("attack", ["dataset", "generator"], "target_id", filepath)
+        self.compare("attack", ["dataset", "generator"], "target_id", filepath, include_one_marker_plots)
 
         # compare datasets and target ids for fixed attacks-generators
-        self.compare("dataset", ["attack", "generator"], "target_id", filepath)
+        self.compare("dataset", ["attack", "generator"], "target_id", filepath, include_one_marker_plots)
 
         # compare targets and generators ids for fixed attacks-dataset
-        self.compare("target_id", ["dataset", "attack"], "generator", filepath)
+        self.compare("target_id", ["dataset", "attack"], "generator", filepath, include_one_marker_plots)
 
         # compare targets and attacks ids for fixed dataset-generators
-        self.compare("target_id", ["dataset", "generator"], "attack", filepath)
+        self.compare("target_id", ["dataset", "generator"], "attack", filepath, include_one_marker_plots)
 
         # compare attacks and generators for fixed dataset-targets.
-        self.compare("generator", ["dataset", "target_id"], "attack", filepath)
+        self.compare("generator", ["dataset", "target_id"], "attack", filepath, include_one_marker_plots)
 
         print(f"All figures saved to directory {filepath}")
 

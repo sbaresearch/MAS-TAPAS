@@ -7,6 +7,7 @@ from io import StringIO
 import subprocess
 from subprocess import PIPE
 from ..datasets import TabularDataset
+import mlflow
 
 
 class Generator(ABC):
@@ -115,62 +116,60 @@ class GeneratorFromExecutable(Generator):
     @property
     def label(self):
         return self._label
-    
 
-# TODO: This doesn't work on recent versions of reprosyn.
-class ReprosynGeneratorFromCLI(Generator):
-    """
-    A class which wraps an external executable as a generator. Currently supports
-    only tabular datasets.
-    """
-    def __init__(self, exe='rsyn', method='mst', config = {}, verbose=True, label = None):
-        """
-        Parameters
-        ----------
-        exe : The path to the executable as a string. defaults to rsyn
-        method : the reprosyn generator
-        config: dictionary stating method parameters. 
-        verbose: whether to display the stderr from reprosyn.
-        label: string to represent this generator in reports.
-        """
-        actual_exe = shutil.which(exe)
-        if actual_exe is not None:
-            self.exe = actual_exe
-        else: 
-            actual_exe = shutil.which(exe, path = os.getcwd())
-            if actual_exe is not None:
-                self.exe = actual_exe
-            else:
-                raise RuntimeError("Can't find user-supplied executable")
-        self.method = method
-        self.config = config
-        self.verbose = verbose
-
-        self._label = label or method
-        
+class NoBoxGenerator(Generator):
+    """This generator samples from the synthetic data."""
+    def __init__(self, synthetic_data, label="NoBoxGenerator"):
         super().__init__()
+        self.dataset = synthetic_data
+        self._label = label
 
     def fit(self, dataset):
-        assert isinstance(dataset, TabularDataset), 'dataset must be of class TabularDataset'
-        self.dataset = dataset
         self.trained = True
-        
-    def get_default_config(self):
-        out = subprocess.run([self.exe, "--generateconfig", self.method], capture_output=True)
-        return json.load(StringIO(out.stdout.decode()))
 
-    def generate(self, num_samples):
-        if self.trained:
-            proc = subprocess.Popen([self.exe, "--size", f"{num_samples}", "--configstring", f"{json.dumps(self.config)}", self.method], stdin = PIPE, stdout = PIPE, stderr = PIPE)
-            input = bytes(self.dataset.write_to_string(), 'utf-8') 
-            
-            output = proc.communicate(input = input)
-            if self.verbose:
-                print('stderr: ', output[1])
-            
-            return TabularDataset.read_from_string(output[0].decode(), self.dataset.description)
+    def generate(self, num_samples = None, random_state = None):
+        if self.trained: 
+            return self.dataset.sample(num_samples, random_state = random_state)
         else:
             raise RuntimeError("No dataset provided to generator")
+        
+    def __call__(self, dataset, num_samples, random_state = None):
+        self.fit(dataset)
+        return self.generate(num_samples, random_state = random_state)
+
+    @property
+    def label(self):
+        return self._label
+    
+class GeneratorFromMLflow(Generator):
+
+    def __init__(self, tracking_uri, model_name, model_version=None, label="GeneratorFromMLflow"):
+        super().__init__()
+        self.tracking_uri = tracking_uri
+        self.model_name = model_name
+        self.model_version = model_version
+        self._label = label
+    
+    def fit(self, dataset: TabularDataset):
+        mlflow.set_tracking_uri(self.tracking_uri)
+        client = mlflow.MlflowClient(tracking_uri=self.tracking_uri) 
+        if self.model_version == None:
+            model_info = client.get_registered_model(self.model_name)
+            if len(model_info.latest_versions)>1:
+                self.model_version = model_info.latest_versions[0].version
+            else:
+                self.model_version=1
+        
+        model_uri = f"models:/{self.model_name}/{self.model_version}"
+        self.loaded_model = mlflow.pyfunc.load_model(model_uri)
+
+        self.trained=True
+        self.data_desc = dataset.description
+    
+    def generate(self, num_samples):
+        output_data = self.loaded_model.predict(num_samples,{})
+        
+        return TabularDataset(output_data, self.data_desc) 
 
     def __call__(self, dataset, num_samples):
         self.fit(dataset)
@@ -179,37 +178,4 @@ class ReprosynGeneratorFromCLI(Generator):
     @property
     def label(self):
         return self._label
-
-
-class ReprosynGenerator(Generator):
-    """A wrapper for reprosyn objects. This is better than the CLI, which
-       fetches theh config JSON file from the GitHub repo (?)."""
-
-    def __init__(self, reprosyn_class, label=None, **kwargs):
-        self.reprosyn_class = reprosyn_class
-        self.generator_kwargs = kwargs
-        self.trained = False
-        self._label = label or str(reprosyn_class)
-
-    def fit(self, dataset):
-        """Fitting does nothing, as we don't yet know the output size."""
-        assert isinstance(dataset, TabularDataset), 'dataset must be of class TabularDataset'
-        self.dataset = dataset
-        self.trained = True
-
-    def generate(self, num_samples):
-        """Instantiate a reprosyn model, run it, and return output."""
-        assert self.trained, "No dataset provided to generator."
-        model = self.reprosyn_class(
-            dataset=self.dataset.data,
-            metadata=self.dataset.description.schema,
-            size=num_samples,
-            **self.generator_kwargs,
-        )
-        model.run()
-        return TabularDataset(model.output, self.dataset.description)
-
-    @property
-    def label(self):
-        """Cherry on top."""
-        return self._label
+    

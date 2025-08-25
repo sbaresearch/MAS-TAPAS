@@ -1,0 +1,42 @@
+[
+    {
+        "name": "MedInc",
+        "type": "real/non-negative",
+        "representation": "number"
+    },
+    {
+        "name": "HouseAge",
+        "type": "real/non-negative",
+        "representation": "number"
+    },
+    {
+        "name": "AveRooms",
+        "type": "real/non-negative",
+        "representation": "number"
+    },
+    {
+        "name": "AveBedrms",
+        "type": "real/non-negative",
+        "representation": "number"
+    },
+    {
+        "name": "Population",
+        "type": "real/non-negative",
+        "representation": "number"
+    },
+    {
+        "name": "AveOccup",
+        "type": "real/non-negative",
+        "representation": "number"
+    },
+    {
+        "name": "Latitude",
+        "type": "real/non-negative",
+        "representation": "number"
+    },
+    {
+        "name": "Longitude",
+        "type": "real/non-negative",
+        "representation": "number"
+    }
+]

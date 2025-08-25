@@ -1,11 +1,11 @@
 [tool.poetry]
 name = "tapas"
-version = "1.0.0"
+version = "1.0.1"
 description = ""
 authors = ["Florimond Houussiau <fhoussiau@turing.ac.uk>", "James Jordon", "Callum Mole <cmole@turing.ac.uk>", "Camila Rangel-Smith <crangelsmith@turing.ac.uk>", "James Geddes <jgeddes@turing.ac.uk>"]
 
 [tool.poetry.dependencies]
-python = ">=3.9, <3.11"
+python = ">=3.9, <3.12"
 matplotlib = ">=3.4.3"
 palettable = "^3.3.0"
 seaborn = "^0.12.1"
@@ -19,6 +19,9 @@ setuptools = "^65.5.0"
 jupyterlab = "^3.5.0"
 nbclient = "0.5.13"
 scikit-learn = "^1.3.0"
+mlflow = "3.1.1"
+torch = ">=1.8.0"
+geomloss = "0.2.6"
 
 [tool.poetry.dev-dependencies]
 spyder-kernels = "^2.1.0"

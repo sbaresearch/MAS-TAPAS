@@ -239,7 +239,7 @@ class TabularDataset(Dataset):
         return _parse_csv(io.StringIO(data), description.schema, description.label)
 
     @classmethod
-    def read(cls, filepath, label = None):
+    def read(cls, filepath, label = None, filepath_json=None):
         """
         Read csv and json files for dataframe and schema respectively.
 
@@ -257,7 +257,7 @@ class TabularDataset(Dataset):
             A TabularDataset.
 
         """
-        with open(f"{filepath}.json") as f:
+        with open(f"{filepath_json if filepath_json is not None else filepath}.json") as f:
             schema = json.load(f)
 
         return _parse_csv(f"{filepath}.csv", schema, label or filepath)
