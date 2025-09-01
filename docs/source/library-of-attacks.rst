@@ -50,6 +50,14 @@ Summary
 	  - AIA
 	  - ``estimator``, ``criterion``
 	  - Classifier fit on synthetic records to predict the sensitive attribute :math:`x_s` from other attributes :math:`x_{-s}`.
+	* - ``MLAttack``
+	  - AIA
+	  - ``estimator``, ``quasi_identifiers``
+	  - Train one or more machine learning models to predict the sensitive attribute from the quasi-identifiers of records.
+	* - ``DOMIASAttack``
+	  - MIA
+	  - ``density_estimator``
+	  - For each target record :math:`x`, DOMIAS computes the ratio of its density under the synthetic generator distribution :math:`p_G(x)` to its density under a reference distribution :math:`p_R(x)`. This ratio is used as a membership score. By van Breugel et al. from [5]_.
 
 Trainable-threshold attacks
 ---------------------------
@@ -226,6 +234,49 @@ Disclaimer
 - ``estimator``: a ``scikit-learn`` classifier to infer the sensitive attribute from other attributes. Categorical attributes of the data are 1-hot encoded before learning, so any classifier on real-valued data can be applied.
 - ``criterion`` (see `above <Trainable-threshold attacks>`_).
 
+MLAttack
+~~~~~~~~~~
+
+This attribute inference attack uses supervised machine learning to infer the sensitive attribute of the target record from its quasi-identifiers. The attacker trains classifiers (for categorical sensitive attributes) or regressors (for numerical ones) on synthetic datasets, and applies them to the quasi-identifiers of the target record.  
+
+Formally, given a target record :math:`x`, split into quasi-identifiers :math:`x_{-s}` and hidden sensitive attribute :math:`s`, the attack trains one or more estimators :math:`f: x_{-s} \mapsto \hat{s}`.
+
+- If a single model is used (e.g. ``LR``, ``RF``), the score is its prediction.  
+- If multiple models are combined (``ENS``), the attack aggregates their predictions using **majority voting** (classification) or **averaging** (regression).  
+
+Parameters:
+
+- ``quasi_identifiers``: list of columns used as predictors. If not given, all non-sensitive attributes are used.  
+- ``estimator``: model type, one of  
+  - ``ENS``: ensemble of multiple estimators (``RF``, ``SVM``, ``NB``, ``KNN``, ``LR`` for categorical; ``LR``, ``SVR``, ``MLP`` for numerical).  
+  - ``Dummy``: baseline dummy classifier/regressor.  
+  - A specific estimator (e.g. ``RF``, ``SVM``, ``LR``).  
+
+
+DOMIASAttack
+~~~~~~~~~~~~
+
+
+This membership inference attack uses a score proportional to the **density ratio** between the synthetic data generator distribution and an independently estimated reference distribution. By van Breugel et al. from [5]_
+
+For a target record :math:`x`, DOMIAS estimates both:
+
+- :math:`p_G(x)`: the likelihood of :math:`x` under the generator trained on the real dataset.
+- :math:`p_R(x)`: the likelihood of :math:`x` under a reference density estimator trained on an independent sample from the real distribution.
+
+The raw score is the density ratio: :math:`s'(x) = \frac{p_G(x)}{p_R(x)}`.
+
+Membership prediction is then made by comparing :math:`s'(x)` to a threshold (median of scores). Higher ratios indicate stronger overfitting of the generator to :math:`x`, hence higher membership likelihood.
+
+DOMIAS supports different density estimation strategies for :math:`p_G` and :math:`p_R`, including:
+
+- **prior**: multivariate Gaussian approximation,
+- **kde**: kernel density estimation,
+- **bnaf**: Block Neural Autoregressive Flow (normalizing flow model). [4]_
+
+Parameters:
+
+- ``density_estimator``: one of ``'prior'``, ``'kde'``, ``'bnaf'``; defines how densities are estimated.
 
 References
 ----------
@@ -233,3 +284,5 @@ References
 .. [1] Stadler, T., Oprisanu, B. and Troncoso, C., 2022. Synthetic data–anonymisation groundhog day. In 31st USENIX Security Symposium (USENIX Security 22) (pp. 1451-1468).
 .. [2] Elliot, M., 2015. Final report on the disclosure risk associated with the synthetic data produced by the sylls team. Report 2015, 2.
 .. [3] Cretu, A.M., Houssiau, F., Cully, A. and de Montjoye, Y.A., 2022, November. QuerySnout: Automating the Discovery of Attribute Inference Attacks against Query-Based Systems. In Proceedings of the 2022 ACM SIGSAC Conference on Computer and Communications Security (pp. 623-637).
+.. [4] De Cao, N., Aziz, W. and Titov, I., 2019. Block Neural Autoregressive Flow. In Proceedings of the 35th Conference on Uncertainty in Artificial Intelligence (pp. 1263-1273). AUAI Press.
+.. [5] van Breugel, B., Sun, H., Qian, Z., van der Schaar, M., 2023. Membership Inference Attacks against Synthetic Data through Overfitting Detection.

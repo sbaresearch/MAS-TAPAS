@@ -1,4 +1,4 @@
-# from BNAF (De Cao et al., 2018), https://github.com/nicola-decao/BNAF
+# from DOMIAS, https://github.com/vanderschaarlab/DOMIAS
 
 # stdlib
 import math
