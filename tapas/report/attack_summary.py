@@ -88,7 +88,7 @@ class LabelInferenceAttackSummary(AttackSummary):
         float
 
         """
-        return np.mean(self.predictions == self.labels)
+        return np.mean(self.predictions == self.labels) #, axis=0)
 
     # TODO: add the metrics from Stadler et al. (privacy gain etc.)
 
