@@ -14,6 +14,8 @@ import tapas.report
 from tapas.attacks import LpDistance
 
 import pandas
+import os
+import shutil
 
 from sklearn.linear_model import LogisticRegression
 from sklearn.ensemble import RandomForestClassifier
@@ -23,8 +25,8 @@ from sklearn.neighbors import KernelDensity
 data = tapas.datasets.TabularDataset.read(
     "data/2011 Census Microdata Teaching File", label="Census"
 )
-target_record = data.get_records([1])
-data.drop_records([1], in_place=True)
+target_record = data.get_records([1,5,6])
+data.drop_records([1,5,6], in_place=True)
 
 
 # Create a dummy generator.
@@ -85,9 +87,14 @@ for attack in attacks:
 
 # Finally, group together the summaries as a report.
 print("Publishing a report.")
+path = "multiple_mia"
+
+if os.path.exists(path) and os.path.isdir(path):
+    shutil.rmtree(path)
+
 report = tapas.report.MIAttackReport(summaries)
-report.publish("multiple_mia")
+report.publish(path, include_one_marker_plots=False)
 
 # Also publish the ROC curve.
 report = tapas.report.ROCReport(summaries)
-report.publish("multiple_mia")
+report.publish(path)

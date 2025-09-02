@@ -211,6 +211,10 @@ class TargetedMIA(LabelInferenceThreatModel):
 
     # Wrap the test method to output a MIAttackSummary.
     def _wrap_output(self, truth_labels, pred_labels, scores, attack):
+        if self.num_labels > 1:
+            target_id = ",".join([rec.label for rec in self._target_records])
+        else:
+            target_id = self.target_record.label
         return MIAttackSummary(
             truth_labels,
             pred_labels,
@@ -218,7 +222,7 @@ class TargetedMIA(LabelInferenceThreatModel):
             generator_info=self.atk_know_gen.label,
             attack_info=attack.label,
             dataset_info=self.atk_know_data.label,
-            target_id=self.target_record.label,
+            target_id=target_id,
         )
 
     def set_label(self, label: str):

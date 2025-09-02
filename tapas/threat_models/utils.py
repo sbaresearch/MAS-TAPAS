@@ -30,6 +30,10 @@ def extend_threat_model(threat_model, extra_metrics, extra_metrics_names=None):
             if len(self.extra_metrics) == 0:
                 return cls._wrap_output(self, truth_labels, pred_labels, scores, attack)
             
+            if self.num_labels > 1:
+                target_id = ",".join([rec.label for rec in self._target_records])
+            else:
+                target_id = self.target_record.label
             # Otherwise, return the extended summary
             return ExtendedAttackSummary(
                 ReportClass,
@@ -39,7 +43,7 @@ def extend_threat_model(threat_model, extra_metrics, extra_metrics_names=None):
                 generator_info=self.atk_know_gen.label,
                 attack_info=attack.label,
                 dataset_info=self.atk_know_data.label,
-                target_id=self.target_record.label,
+                target_id=target_id,
                 extra_metrics = self.extra_metrics,
                 extra_metrics_names = self.extra_metrics_names,
                 **kwargs

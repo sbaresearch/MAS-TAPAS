@@ -21,8 +21,8 @@ from sklearn.linear_model import LogisticRegression
 data = tapas.datasets.TabularDataset.read(
     "data/2011 Census Microdata Teaching File", label="Census"
 )
-target_record = data.get_records([1])
-data.drop_records([1], in_place=True)
+target_record = data.get_records([1,5,10])
+data.drop_records([1,5,10], in_place=True)
 
 # Create a dummy generator.
 generator = tapas.generators.Raw()

@@ -18,8 +18,8 @@ data = tapas.datasets.TabularDataset.read(
 )
 
 # Selects the target record
-target_record = data.get_records([1])
-data.drop_records([1], in_place=True)
+target_record = data.get_records([1,5,10])
+data.drop_records([1,5,10], in_place=True)
 
 # Create a dummy generator (It just samples data from original dataset)
 generator = tapas.generators.Raw()

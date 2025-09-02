@@ -113,6 +113,8 @@ def metric_comparison_plots(
             loc="center right",
             prop={"size": 20},
             bbox_to_anchor=(1.05, 0.5),
+            title=marker_label, 
+            title_fontsize=18 
         )
 
         fig.suptitle(
@@ -189,7 +191,7 @@ def plot_roc_curve(
         fpr, tpr, thresholds = roc_curve(labels, scores)
         ax.plot(fpr, tpr, label=name)
 
-    ax.legend(loc="lower right", fontsize=20)
+    ax.legend(loc="lower right", fontsize=20, title="Attacks", title_fontsize=18 )
 
     # We add a small margin to correctly display [0,1].
     margin = 0.01
