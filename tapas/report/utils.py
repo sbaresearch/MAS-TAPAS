@@ -125,7 +125,13 @@ def metric_comparison_plots(
             fontsize=24,
         )
         filename = f"{comparison_label}sComparison_Dataset{pair_name[0]}_Attack{pair_name[1]}.png"
-
+          
+        # Add condition in case pair_name[0] or pair_name[1] target ids is long replace.
+        if fixed_pair_label[0] == 'target_id':
+            filename = f"{comparison_label}sComparison_DatasetTarget_Ids_Attack{pair_name[1]}.png"
+        if fixed_pair_label[1] == 'target_id':
+            filename = f"{comparison_label}sComparison_DatasetTarget_Ids_AttackTargetIds.png"
+          
         filename = os.path.join(output_path, filename)
 
         dirname = os.path.dirname(filename)
