@@ -276,7 +276,7 @@ class BinaryLabelInferenceAttackSummary(LabelInferenceAttackSummary):
                             self.mia_advantage,
                             self.privacy_gain,
                             self.auc,
-                            self.effective_epsilon,
+                            #self.effective_epsilon,
                         ]
                     ],
                     columns=[
@@ -285,7 +285,7 @@ class BinaryLabelInferenceAttackSummary(LabelInferenceAttackSummary):
                         "mia_advantage",
                         "privacy_gain",
                         "auc",
-                        "effective_epsilon",
+                        #"effective_epsilon",
                     ],
                 ),
             ],
@@ -374,7 +374,7 @@ class MIAttackSummary(BinaryLabelInferenceAttackSummary):
                 BinaryLabelInferenceAttackSummary.get_metrics(self),
             ],
             axis=1,
-        )
+        ).round(3)
 
 
 class AIAttackSummary(LabelInferenceAttackSummary):
@@ -561,7 +561,7 @@ class BinaryAIAttackSummary(AIAttackSummary, BinaryLabelInferenceAttackSummary):
         return pd.concat(
             [self.get_header(), BinaryLabelInferenceAttackSummary.get_metrics(self),],
             axis=1,
-        )
+        ).round(3)
 
 
 class ExtendedAttackSummary():
@@ -580,7 +580,7 @@ class ExtendedAttackSummary():
         return pd.concat(
                 [self._original_instance.get_metrics(), 
                  pd.DataFrame(self.extra_metrics)], axis=1
-        )
+        ).round(3)
 
     def __getattr__(self, name):
         # Delegate attribute access to the original instance
