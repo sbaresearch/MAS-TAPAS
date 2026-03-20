@@ -11,7 +11,7 @@ if TYPE_CHECKING:
     from ..datasets import Dataset
     from ..threat_models import ThreatModel
 
-from ..threat_models import LabelInferenceThreatModel, TargetedAIA, NoBoxKnowledge, NoBoxThreatModelMIA
+from ..threat_models import LabelInferenceThreatModel, TargetedAIA, NoBoxKnowledge, NoBoxThreatModelAIA
 
 from abc import ABC, abstractmethod
     
