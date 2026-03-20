@@ -11,7 +11,7 @@ if TYPE_CHECKING:
     from ..datasets import Dataset
     from ..threat_models import ThreatModel
 
-from ..threat_models import LabelInferenceThreatModel, TargetedAIA, NoBoxKnowledge
+from ..threat_models import LabelInferenceThreatModel, TargetedAIA, NoBoxKnowledge, NoBoxThreatModelMIA
 
 from abc import ABC, abstractmethod
     
@@ -133,7 +133,7 @@ class TrainableThresholdAttack(Attack):
 
     def train(
         self,
-        threat_model: LabelInferenceThreatModel,
+        threat_model: LabelInferenceThreatModel | NoBoxThreatModelAIA,
         num_samples: int = None,
         **attack_score_kwargs,
     ):
@@ -154,8 +154,8 @@ class TrainableThresholdAttack(Attack):
         """
         # First, optionally train the score.
         assert isinstance(
-            threat_model, LabelInferenceThreatModel
-        ), "Threat model must be a LabelInferenceThreatModel."
+            threat_model, LabelInferenceThreatModel|NoBoxThreatModelAIA
+        ), "Threat model must be a LabelInferenceThreatModel or NoBoxThreatModelAIA."
         self.threat_model = threat_model
         self._train_attack_score(threat_model, num_samples, **attack_score_kwargs)
         # For targeted AIAs, we implement a heuristic to compute the positive label.
