@@ -13,12 +13,14 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from ..attacks import Attack  # for typing
     from ..datasets import TabularRecord
-    from ..generators import Generator  # for typing
+    from ..generators import Generator # for typing
 
+from ..generators import NoBoxGenerator
 from .base_classes import ThreatModel, TrainableThreatModel
 from .attacker_knowledge import (
     AttackerKnowledgeOnData,
     AttackerKnowledgeOnGenerator,
+    NoBoxKnowledge,
     AttackerKnowledgeWithLabel,
     LabelInferenceThreatModel,
 )
@@ -202,3 +204,164 @@ class TargetedAIA(LabelInferenceThreatModel):
         # See mia.py for the following bit of code.
         LabelInferenceThreatModel.set_label(self, label)
         self.target_record = self._target_records[label]
+
+class NoBoxThreatModelAIA(ThreatModel):
+    """
+    Threat model for a no-box synthetic data scenario.
+    
+    Assumptions:
+    - Attacker only has access to a synthetic dataset (or multiple synthetic datasets)
+    - Attacker may have auxiliary data from the same distribution
+    - Attacker knows quasi-identifiers from the attributes 
+    - Attacker wants to infer a sensitive attribute from a given record in the real dataset
+    """
+    def __init__(
+        self,
+        target_records: TabularDataset,
+        sensitive_attribute: str,
+        attribute_values: list,
+        quasi_identifiers: list,
+        attacker_knowledge_data: AttackerKnowledgeOnData,
+        attacker_knowledge_generator: AttackerKnowledgeOnGenerator
+    ):
+        """
+        Parameters
+        ----------
+        target_records: Dataset
+            The target records to add to the dataset with different sensitive
+            attribute values. If this contains more than one record, the values
+            for each record is sampled independently from all others.
+        sensitive_attribute: str
+            The name of the attribute to randomise.
+        quasi_identifiers: list
+            Subset of attribute known by the attacker.
+        attribute_values: list
+            All values that the attribute can take.
+        attacker_knowledge_generator: AttackerKnowledgeOnGenerator
+            The generator knowledge available for the attacker, restricted to No-Box case
+            that only samples from synthetic outputs.
+        attacker_knowledge_data: AttackerKnowledgeOnData
+            Background data for the attacker, used to extract 'test_data' 
+            for baseline control records.
+        """
+        # Assertions to ensure no-box integrity
+        assert isinstance(attacker_knowledge_generator, NoBoxKnowledge), \
+            "Attacker knowledge on generator must be NoBox for this specific privacy test."   
+        assert isinstance(attacker_knowledge_generator.generator, NoBoxGenerator), \
+            "Attacker generator must be a NoBoxGenerator"
+        
+        self.atk_know_data = attacker_knowledge_data
+        self.atk_know_gen = attacker_knowledge_generator
+        self.sensitive_attribute = sensitive_attribute
+        self.attribute_values = attribute_values       
+        self.quasi_identifiers = quasi_identifiers
+        self.sensitive_attribute = sensitive_attribute 
+        self.relevant_cols = self.quasi_identifiers +[self.sensitive_attribute]
+        
+        
+        # Store all possible targets
+        self._target_records = [r for r in target_records.view(columns=self.relevant_cols)]
+        self.num_labels = len(self._target_records)
+        
+        # Store targets in hold-out set
+        test_data = getattr(self.atk_know_data, "test_data", None)
+        self._control_records = []
+        if test_data is not None:
+            self._control_records = [r for r in test_data.view(columns=self.relevant_cols)]
+        
+        # Set the initial state to the first record
+        self.set_label(0) 
+        
+    def set_label(self, label: int, group='target'):
+        """Sets the active record the attack will see."""
+        self.current_label_index = label
+        if group == 'target':
+            self.target_record = self._target_records[label]
+        else:
+            self.target_record = self._control_records[label]
+      
+    def _run_attack_loop(self, attack, synthetic_datasets, records, is_control=False):
+        """Iterates through specific group of records."""
+        truths, preds, scores = [], [], []
+        group_name = 'control' if is_control else 'target'
+        
+        for i in range(len(records)):
+            self.set_label(i, group=group_name)
+            
+            # Record the real sensitive value
+            truths.append(self.target_record.data[self.sensitive_attribute].iloc[0])
+            
+            # The attack internally calls self.threat_model.target_record
+            preds.extend(attack.attack(synthetic_datasets))
+            
+            # Only collect scores for the target group 
+            if not is_control:
+                scores.extend(attack.attack_score(synthetic_datasets))
+                
+        return truths, preds, scores
+    
+    def test(self, attack: Attack):
+        # Generate synthetic data 
+        raw_synthetic_datasets = [self.atk_know_gen.generate(None, training_mode=False)]
+        synthetic_datasets = [ds.view(columns=self.relevant_cols) for ds in raw_synthetic_datasets]
+        
+        # Run attack on training data
+        all_truth, all_preds, all_scores = self._run_attack_loop(
+            attack, synthetic_datasets, self._target_records, is_control=False
+        )
+        
+        # Run attack on hold-out data
+        control_truth, control_preds = [], []
+        if self._control_records:
+            control_truth, control_preds, _ = self._run_attack_loop(
+                attack, synthetic_datasets, self._control_records, is_control=True
+            )
+        
+        # Wrap output with both sets of data
+        return self._wrap_output(
+            all_truth, 
+            all_preds, 
+            all_scores, 
+            attack, 
+            control_labels=control_truth, 
+            control_preds=control_preds
+        )
+     
+    def _wrap_output(self, truth_labels, pred_labels, scores, attack, control_labels=None, control_preds=None):
+        # If only two values are possible, use the binary valued report.
+        # The second value is treated as the positive label.
+        if len(self.attribute_values) == 2:
+            ReportClass = BinaryAIAttackSummary
+            kwargs = {"positive_value": self.attribute_values[1],'control_labels':control_labels,'control_preds':control_preds}
+        # Otherwise, we use the more general class for AIA.
+        else:
+            ReportClass = AIAttackSummary
+
+        if self.num_labels > 1:
+            target_id = ",".join([rec.label for rec in self._target_records])
+        else:
+            target_id = self.target_record.label
+        return ReportClass(
+            truth_labels,
+            pred_labels,
+            scores,
+            generator_info=self.atk_know_gen.label,
+            attack_info=attack.label,
+            dataset_info='Auxiliary',
+            target_id=target_id,
+            sensitive_attribute=self.sensitive_attribute,
+            **kwargs
+        )
+        
+    
+        
+        
+        
+        
+        
+        
+    
+    
+    
+    
+    
