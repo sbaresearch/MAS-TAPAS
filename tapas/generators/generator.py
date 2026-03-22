@@ -129,6 +129,8 @@ class NoBoxGenerator(Generator):
 
     def generate(self, num_samples = None, random_state = None):
         if self.trained: 
+            if num_samples is None:
+                 num_samples = len(self.dataset)  # default to full dataset
             return self.dataset.sample(num_samples, random_state = random_state)
         else:
             raise RuntimeError("No dataset provided to generator")
