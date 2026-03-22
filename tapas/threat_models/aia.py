@@ -332,7 +332,7 @@ class NoBoxThreatModelAIA(ThreatModel):
         # The second value is treated as the positive label.
         if len(self.attribute_values) == 2:
             ReportClass = BinaryAIAttackSummary
-            kwargs = {"positive_value": self.attribute_values[1],'control_labels':control_labels,'control_preds':control_preds}
+            kwargs = {"positive_value": self.attribute_values[1]}
         # Otherwise, we use the more general class for AIA.
         else:
             ReportClass = AIAttackSummary
