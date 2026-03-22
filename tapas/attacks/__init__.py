@@ -1,7 +1,5 @@
 from .base_classes import Attack
-from .wrapper_synthmia_attacks import (
-    SynthMiaTapasWrapper
-)
+
 from .closest_distance import (
     ClosestDistanceMIA,
     ClosestDistanceAIA,
