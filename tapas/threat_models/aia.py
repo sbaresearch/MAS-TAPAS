@@ -336,6 +336,7 @@ class NoBoxThreatModelAIA(ThreatModel):
         # Otherwise, we use the more general class for AIA.
         else:
             ReportClass = AIAttackSummary
+            kwargs={}
 
         if self.num_labels > 1:
             target_id = ",".join([rec.label for rec in self._target_records])
