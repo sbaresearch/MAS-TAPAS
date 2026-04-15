@@ -10,6 +10,8 @@ for a target user, given some known attributes and the synthetic data.
 from __future__ import annotations
 from typing import TYPE_CHECKING
 
+from tapas.datasets.dataset import TabularDataset
+
 if TYPE_CHECKING:
     from ..attacks import Attack  # for typing
     from ..datasets import TabularRecord
@@ -219,10 +221,10 @@ class NoBoxThreatModelAIA(ThreatModel):
         self,
         target_records: TabularDataset,
         sensitive_attribute: str,
-        attribute_values: list,
         quasi_identifiers: list,
         attacker_knowledge_data: AttackerKnowledgeOnData,
-        attacker_knowledge_generator: AttackerKnowledgeOnGenerator
+        attacker_knowledge_generator: AttackerKnowledgeOnGenerator,
+        attribute_values: list = None,
     ):
         """
         Parameters
@@ -272,6 +274,10 @@ class NoBoxThreatModelAIA(ThreatModel):
         # Set the initial state to the first record
         self.set_label(0) 
         
+        # Type of target attribute (Retrieved using schema from target records)
+        self.sensitive_attribute_type = target_records.description.schema[target_records.description.columns.index(sensitive_attribute)]['type']
+        
+        
     def set_label(self, label: int, group='target'):
         """Sets the active record the attack will see."""
         self.current_label_index = label
@@ -295,8 +301,8 @@ class NoBoxThreatModelAIA(ThreatModel):
             preds.extend(attack.attack(synthetic_datasets))
             
             # Only collect scores for the target group 
-            if not is_control:
-                scores.extend(attack.attack_score(synthetic_datasets))
+            #if not is_control:
+            scores.extend(attack.attack_score(synthetic_datasets))
                 
         return truths, preds, scores
     

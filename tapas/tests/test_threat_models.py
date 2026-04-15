@@ -5,12 +5,15 @@ import os
 from unittest import TestCase
 
 import itertools
+from unittest.mock import MagicMock
 import numpy as np
 import pandas as pd
 import pytest
 
 from tapas.datasets import TabularDataset, TabularRecord
 from tapas.datasets.data_description import DataDescription
+from tapas.generators.generator import NoBoxGenerator
+from tapas.report.attack_summary import AIAttackSummary, BinaryAIAttackSummary
 from tapas.threat_models import (
     ThreatModel,
     TargetedMIA,
@@ -21,6 +24,8 @@ from tapas.threat_models import (
     UncertainBoxKnowledge,
 )
 from tapas.generators import Raw, Generator
+from tapas.threat_models.aia import NoBoxThreatModelAIA
+from tapas.threat_models.attacker_knowledge import AttackerKnowledgeOnData
 
 
 class RawConcurrent(Raw):
@@ -422,3 +427,135 @@ class TestMemory(TestCase):
                 self.assertEqual(len(threat_model._memory[training][0]), num_samples)
                 self.assertEqual(len(threat_model._memory[training][1]), num_samples)
 
+class TestNoBoxThreatModelAIA(TestCase):
+    """Test the attribute-inference no box threat model."""
+    
+    def setUp(self):
+        self.data_desc = DataDescription([
+            {"name": "age", "type": "countable", "description": "integer"},
+            {"name": "zip", "type": "countable", "description": "integer"},
+            {"name": "salary", "type": "countable", "description": "sensitive"},
+        ])
+
+        # Setup Target Records (3 records)
+        target_df = pd.DataFrame([
+            (25, 1001, 50),
+            (30, 1002, 60),
+            (35, 1003, 70)
+        ], columns=["age", "zip", "salary"])
+        self.target_dataset = TabularDataset(target_df, self.data_desc)
+
+        # Setup Attacker Knowledge on Data (with test/control records)
+        control_df = pd.DataFrame([
+            (40, 1004, 80),
+            (45, 1005, 90)
+        ], columns=["age", "zip", "salary"])
+        control_ds = TabularDataset(control_df, self.data_desc)
+        
+        self.atk_know_data = MagicMock(spec=AuxiliaryDataKnowledge)
+        self.atk_know_data.test_data = control_ds
+
+        mock_gen = MagicMock(spec=NoBoxGenerator)
+        self.atk_know_gen = NoBoxKnowledge(mock_gen,None)
+
+        # 5. Initialize Threat Model
+        self.threat_model = NoBoxThreatModelAIA(
+            target_records=self.target_dataset,
+            sensitive_attribute="salary",
+            quasi_identifiers=["age", "zip"],
+            attacker_knowledge_data=self.atk_know_data,
+            attacker_knowledge_generator=self.atk_know_gen,
+            attribute_values=[50, 60, 70, 80, 90]
+        )
+    
+    def test_initialization(self):
+        """Test if attributes are correctly assigned and filtered to relevant columns."""
+        self.assertEqual(len(self.threat_model._target_records), 3)
+        self.assertEqual(len(self.threat_model._control_records), 2)
+        # Check if view filtering worked (relevant_cols = zip, age, salary)
+        first_record_cols = self.threat_model.target_record.data.columns.tolist()
+        self.assertIn("salary", first_record_cols)
+        self.assertIn("age", first_record_cols)
+        self.assertEqual(len(first_record_cols), 3)
+
+    def test_set_label(self):
+        """Test switching between target and control records."""
+        # Test target group
+        self.threat_model.set_label(1, group='target')
+        self.assertEqual(self.threat_model.target_record.data["age"].iloc[0], 30)
+        
+        # Test control group
+        self.threat_model.set_label(0, group='control')
+        self.assertEqual(self.threat_model.target_record.data["age"].iloc[0], 40)
+
+    def test_nobox_assertions(self):
+        """Test that the model strictly enforces NoBox types."""
+        wrong_gen_knowledge = BlackBoxKnowledge(Raw(), num_synthetic_records=None)
+        
+        with self.assertRaises(AssertionError):
+            NoBoxThreatModelAIA(
+                self.target_dataset, "salary", ["age"], 
+                self.atk_know_data, wrong_gen_knowledge
+            )
+
+    def test_attack_flow(self):
+        """Test the execution of the attack loop and output wrapping."""
+        mock_attack = MagicMock()
+        mock_attack.label = "MockAttack"
+
+        mock_attack.attack.return_value = [60] 
+        mock_attack.attack_score.return_value = [0.8]
+
+        synthetic_ds = TabularDataset(
+            pd.DataFrame([(30, 1002, 60)], columns=["age", "zip", "salary"]),
+            self.data_desc
+        )
+        self.atk_know_gen.generate = MagicMock(return_value=synthetic_ds)
+
+        report = self.threat_model.test(mock_attack)
+        self.assertEqual(mock_attack.attack.call_count, 5) # Number of times called (target records + control records)
+        self.assertEqual(len(report.predictions), 3) # Based on target_records
+        
+
+    def test_wrap_output_binary_logic(self):
+        """Test if the correct Summary class is chosen for binary vs multiclass."""
+        
+        mock_attack = MagicMock()
+        mock_attack.label = "MockAttack"
+        
+        # Binary case
+        binary_model = NoBoxThreatModelAIA(
+            target_records=self.target_dataset,
+            sensitive_attribute="salary",
+            quasi_identifiers=["age"],
+            attacker_knowledge_data=self.atk_know_data,
+            attacker_knowledge_generator=self.atk_know_gen,
+            attribute_values=[0, 1] # Binary
+        )
+        
+        binary_report = binary_model._wrap_output(
+            truth_labels=[0, 1], 
+            pred_labels=[1, 0], 
+            scores=[0.9,0.4], 
+            attack=mock_attack
+        )
+        self.assertIsInstance(binary_report, BinaryAIAttackSummary)
+        
+        multiclass_model = NoBoxThreatModelAIA(
+            target_records=self.target_dataset,
+            sensitive_attribute="salary",
+            quasi_identifiers=["age"],
+            attacker_knowledge_data=self.atk_know_data,
+            attacker_knowledge_generator=self.atk_know_gen,
+            attribute_values=[0, 1, 2]  # Three values
+        )
+        
+        multi_report = multiclass_model._wrap_output(
+            truth_labels=[0, 2], 
+            pred_labels=[0, 1], 
+            scores=[[0.6,0.3,0.1], [0.1,0.8,0.1] ], # Multiclass scores usually structured differently
+            attack=mock_attack
+        )
+        self.assertIsInstance(multi_report, AIAttackSummary)
+        
+        
