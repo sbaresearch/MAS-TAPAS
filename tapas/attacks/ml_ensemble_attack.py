@@ -3,6 +3,7 @@ from abc import abstractmethod
 import numpy as np
 import pandas as pd
 from sklearn import clone
+from sklearn.preprocessing import LabelEncoder
 
 
 from tapas.datasets.dataset import TabularDataset
@@ -44,33 +45,45 @@ class MLInferenceAttack(Attack):
 
     def __init__(
         self,
-        categorical = True,
         label = None        
     ):
         self._label = label or f"MLInferenceAttack"
         self.trained = False
-        self.categorical = categorical
-        self.estimators = {key: est for key, est in (CAT_ESTIMATORS if categorical else NUM_ESTIMATORS).items()}
-        self.voter = VotingClassifier(estimators=list(self.estimators.items()),voting='soft',n_jobs=-1) if self.categorical else VotingRegressor(estimators=list(self.estimators.items()),n_jobs=-1)
         self.mem = {}
 
     def train(
         self,
-        threat_model: LabelInferenceThreatModel = None,
-        num_samples: int = None
+        threat_model
     ):
         """
         Train the attack by fitting the preprocessor and preparing the data.
         """
-        assert isinstance(threat_model, TargetedAIA | NoBoxThreatModelAIA), \
-             "Need LabelInferenceThreatModel (e.g. TargetedAIA)."
+        if not isinstance(threat_model, NoBoxThreatModelAIA):
+            raise TypeError(
+                f"GeneralizedCAPAttack requires NoBoxThreatModelAIA, "
+                f"but received {type(threat_model).__name__}."
+            )
         
         self.threat_model = threat_model
+        self.categorical = (threat_model.sensitive_attribute_type == "finite")
+        
+        if self.categorical:
+            self.voter = VotingClassifier(
+                estimators=list(CAT_ESTIMATORS.items()), 
+                voting='soft', n_jobs=-1
+            )
+            self.label_encoder = LabelEncoder()
+        else:
+            self.voter = VotingRegressor(
+                estimators=list(NUM_ESTIMATORS.items()), 
+                n_jobs=-1
+            )
+        
         self.trained = True        
 
     def attack(self, datasets: List[pd.DataFrame]) -> List[int]:
         """
-        For each dataset, return best guess (majority vote) of target attribute.
+        For each dataset, return best guess (majority vote or average) of target attribute.
         """
         scores = self.attack_score(datasets)
         
@@ -82,15 +95,10 @@ class MLInferenceAttack(Attack):
                 # Multi-class: Index of highest probability
                 indices = np.argmax(scores, axis=1) 
 
-            # Get a fitted model from memory
-            voter = next(iter(self.mem.values()))
-
-            predictions = voter.le_.inverse_transform(indices)
+            return self.label_encoder.inverse_transform(indices)
         
-        else:
-            predictions = scores           
-            
-        return predictions
+        # Continuous: Scores are the predictions
+        return scores
 
     def attack_score(self, datasets: List[pd.DataFrame], proba=True) -> List[float]:
         assert self.trained, "Attack must first be trained."
@@ -114,8 +122,13 @@ class MLInferenceAttack(Attack):
                 X_syn = dataset.view(exclude_columns=[self.threat_model.sensitive_attribute])
                 y_syn = dataset.view(columns=[self.threat_model.sensitive_attribute])
                 
+                if self.categorical:
+                    y_syn = self.label_encoder.fit_transform(y_syn.data.values.ravel())
+                else:
+                    y_syn = y_syn.data.values.ravel()
+                
                 # Train ensemble on synthetic data
-                voter.fit(X_syn.as_numeric, y_syn.data.values.ravel())
+                voter.fit(X_syn.as_numeric, y_syn)
                 
                 # Save fit model for further target records
                 self.mem[key] = voter
@@ -124,10 +137,11 @@ class MLInferenceAttack(Attack):
                 # Categorical: predict_proba[1] for binary or full vector for multi-class
                 res = voter.predict_proba(target_record_x.as_numeric)[0]
                 if len(res) == 2:
-                    res = res[1]  # Return probability of positive class
+                    res = res[1]  # Return probability of positive (first) class
             else:
                 # Numerical: return the predicted continuous value
-                res = voter.predict(target_record_x.as_numeric)[0]
+                prediction = voter.predict(target_record_x.as_numeric)
+                res = float(np.ravel(prediction)[0])
             
             final_scores.append(res)
             

@@ -7,6 +7,7 @@ from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import MinMaxScaler, OneHotEncoder
 from tapas.datasets.dataset import Dataset
 from tapas.attacks.base_classes import Attack
+from tapas.threat_models.aia import NoBoxThreatModelAIA
 
 class GeneralizedCAPAttack(Attack):
     """
@@ -14,16 +15,15 @@ class GeneralizedCAPAttack(Attack):
     Hittmeir, M., Mayer, R., & Ekelhart, A. (2020, March). A baseline for attribute disclosure risk in synthetic data. 
     In Proceedings of the Tenth ACM Conference on Data and Application Security and Privacy (pp. 133-143).
     
-    The attack finds the minimal distance (rho) to define an equivalence class 
-    N in the synthetic data S for a victim record j and using an ensemble to determine the sensitive attribute value.
+    The attack finds the minimal distance (rho) to define an equivalence class N in the synthetic data S for a victim record j and 
+    uses an majority voting to determine the sensitive attribute value. 
+    
     """
     def __init__(
         self,
-        tolerance=0.01,
         label: str = None,
     ):
         self._label = label or f"GeneralizedCAPAttack"
-        self.tolerance = tolerance
         self.preprocessor = None
         self.label_encoder = LabelEncoder()
         
@@ -62,10 +62,26 @@ class GeneralizedCAPAttack(Attack):
         The threat model from which to generate labelled samples of predicted sensitive values,
         simulating an attacker with only access to synthetic datasets.
         """
+        if not isinstance(threat_model, NoBoxThreatModelAIA):
+            raise TypeError(
+                f"GeneralizedCAPAttack requires NoBoxThreatModelAIA, "
+                f"but received {type(threat_model).__name__}."
+            )
+        
         self.threat_model = threat_model
+        
+        sensitive_attribute = self.threat_model.sensitive_attribute
+        sensitive_attribute_type = self.threat_model.sensitive_attribute_type
+        
+        if sensitive_attribute_type != "finite":
+            raise ValueError(
+                f"GeneralizedCAPAttack is only compatible with categorical (finite) attributes. "
+                f"The schema defines '{sensitive_attribute}' as categorical."
+            )
+        
         self.trained = True
         
-    
+        
     def attack_score(self, datasets: list[Dataset]):
         """
         Computes the probability distribution of the 
@@ -105,8 +121,8 @@ class GeneralizedCAPAttack(Attack):
             rho = dist_to_closest[0][0]
             
             # Extract Equivalence Class (N)
-            # Radius includes rho + tolerance to catch floating errors and close enough numerical values
-            effective_radius = rho + self.tolerance + 1e-7
+            # Radius includes rho + tolerance to catch floating errors 
+            effective_radius = rho + 1e-7
         
             # FRNN is used to find the equivalence class  
             neigh = RadiusNeighborsClassifier(
