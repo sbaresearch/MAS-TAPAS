@@ -1,5 +1,7 @@
 from .base_classes import Attack
-
+from .wrapper_synthmia_attacks import (
+    SynthMiaTapasWrapper
+)
 from .closest_distance import (
     ClosestDistanceMIA,
     ClosestDistanceAIA,
@@ -27,5 +29,5 @@ from .synthinference import (
 from .domias import DOMIASAttack
 from .generalized_cap import GeneralizedCAPAttack
 from .ml_attack import MLAttack
-from .ml_inference_attack import MLInferenceAttack
+from .ml_ensemble_attack import MLInferenceAttack
 from .utils import evaluate_basic_available_attacks
