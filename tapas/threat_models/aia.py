@@ -357,6 +357,7 @@ class NoBoxThreatModelAIA(ThreatModel):
             dataset_info='Auxiliary',
             target_id=target_id,
             sensitive_attribute=self.sensitive_attribute,
+            quasi_identifiers=self.quasi_identifiers
             **kwargs
         )
         
