@@ -250,6 +250,14 @@ class TrainableThresholdAttack(Attack):
         if self._threshold is None:
             raise Exception("Attack has not been trained (threshold is None).")
         scores = self.attack_score(datasets)
+        if isinstance(scores[0], (list, np.ndarray)):
+            predictions=[]
+            for s_vector in scores:
+                max_val = np.max(s_vector)
+                best_indices = np.where(np.isclose(s_vector, max_val, atol=1e-12))[0]
+                chosen_index = np.random.choice(best_indices)
+                predictions.append(self.threat_model.attribute_values[chosen_index])
+            return np.array(predictions)
         return np.array(
             [
                 self.positive_label if s >= self._threshold else self.negative_label
