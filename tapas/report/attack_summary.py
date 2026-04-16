@@ -523,6 +523,8 @@ class BinaryAIAttackSummary(AIAttackSummary, BinaryLabelInferenceAttackSummary):
             Metadata with information about the target record used on the attack.
         sensitive_attribute: str
             The name of the sensitive attribute that the attack aims to infer.
+        quasi_identifiers: list[str]
+            The name of the quasi-identifiers known by the attacker.
         positive_value: int (default 1)
             The value of the sensitive attribute to mark as positive.
 
