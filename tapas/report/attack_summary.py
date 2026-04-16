@@ -501,6 +501,7 @@ class BinaryAIAttackSummary(AIAttackSummary, BinaryLabelInferenceAttackSummary):
         dataset_info="",
         target_id="",
         sensitive_attribute="",
+        quasi_identifiers="",
         positive_value=1,
     ):
         """
@@ -536,6 +537,7 @@ class BinaryAIAttackSummary(AIAttackSummary, BinaryLabelInferenceAttackSummary):
             dataset_info,
             target_id,
             sensitive_attribute,
+            quasi_identifiers
         )
         BinaryLabelInferenceAttackSummary.__init__(
             self, labels, predictions, scores, positive_label=positive_value
