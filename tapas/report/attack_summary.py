@@ -11,7 +11,7 @@ from abc import ABC, abstractmethod
 import numpy as np
 import os
 import pandas as pd
-
+import inspect
 import pickle
 
 from sklearn.metrics import roc_auc_score
@@ -89,6 +89,8 @@ class LabelInferenceAttackSummary(AttackSummary):
 
         """
         return np.mean(self.predictions == self.labels) #, axis=0)
+    
+    
 
     # TODO: add the metrics from Stadler et al. (privacy gain etc.)
 
@@ -393,6 +395,7 @@ class AIAttackSummary(LabelInferenceAttackSummary):
         dataset_info="",
         target_id="",
         sensitive_attribute="",
+        quasi_identifiers="",
     ):
         """
         Parameters
@@ -413,6 +416,8 @@ class AIAttackSummary(LabelInferenceAttackSummary):
             Metadata with information about the target record used on the attack.
         sensitive_attribute: str
             The name of the sensitive attribute that the attack aims to infer.
+        quasi_identifiers: list[str]
+            The name of the quasi-identifiers known by the attacker.
 
         """
         LabelInferenceAttackSummary.__init__(self, labels, predictions, scores)
@@ -421,6 +426,7 @@ class AIAttackSummary(LabelInferenceAttackSummary):
         self.dataset = dataset_info
         self.target_id = target_id
         self.sensitive_attribute = sensitive_attribute
+        self.quasi_identifiers = quasi_identifiers
 
     def get_header(self):
         """
@@ -435,6 +441,7 @@ class AIAttackSummary(LabelInferenceAttackSummary):
                     self.generator,
                     self.attack,
                     self.sensitive_attribute,
+                    self.quasi_identifiers
                 ]
             ],
             columns=[
@@ -443,6 +450,7 @@ class AIAttackSummary(LabelInferenceAttackSummary):
                 "generator",
                 "attack",
                 "sensitive_attribute",
+                "quasi_identifiers"
             ],
         )
 
@@ -567,6 +575,10 @@ class BinaryAIAttackSummary(AIAttackSummary, BinaryLabelInferenceAttackSummary):
 class ExtendedAttackSummary():
 
     def __init__(self, original_attack_summary, *args, **kwargs):
+        
+        control_labels = kwargs.pop("control_labels", None)
+        control_preds = kwargs.pop("control_preds", None)
+        
         extra_metrics = kwargs.pop("extra_metrics", None)
         extra_metrics_names = kwargs.pop("extra_metrics_names", None)
         
@@ -574,7 +586,37 @@ class ExtendedAttackSummary():
             extra_metrics_names = [ex.__name__ for ex in extra_metrics]
         
         self._original_instance = original_attack_summary(*args, **kwargs)
-        self.extra_metrics = {name: [metric(self._original_instance.labels, self._original_instance.predictions)] for name, metric in zip(extra_metrics_names, extra_metrics)}
+        
+        self.extra_metrics = {}
+        
+        for name,metric in zip(extra_metrics_names, extra_metrics):
+            sig = inspect.signature(metric)
+            params = sig.parameters
+
+            # Check if the function explicitly asks for these two arguments
+            if "control_labels" in params and "control_preds" in params:
+                # This metric knows how to use control data (like DCAP)
+                 res = metric(
+                    self._original_instance.labels, 
+                    self._original_instance.predictions,
+                    control_labels=control_labels,
+                    control_preds=control_preds
+                )
+            else:
+                # This is a standard metric (like accuracy_score)
+                res = metric(
+                    self._original_instance.labels, 
+                    self._original_instance.predictions
+                )
+            
+            # added to return multiple results
+            if res is dict:
+                for metric_name, metric_val in res.items():
+                    self.extra_metrics[metric_name] = [metric_val]
+            else:            
+                self.extra_metrics[name] = [res]
+        
+        #self.extra_metrics = {name: [metric(self._original_instance.labels, self._original_instance.predictions)] for name, metric in zip(extra_metrics_names, extra_metrics)}
     
     def get_metrics(self):
         return pd.concat(
