@@ -577,57 +577,56 @@ class BinaryAIAttackSummary(AIAttackSummary, BinaryLabelInferenceAttackSummary):
 
 
 class ExtendedAttackSummary():
-
+    """
+    Wrapper that extends an AttackSummary with 
+    pluggable, context-aware extra metrics.
+    """
     def __init__(self, original_attack_summary, *args, **kwargs):
         
+        # Extract data needed for the extension
         control_labels = kwargs.pop("control_labels", None)
         control_preds = kwargs.pop("control_preds", None)
-        
         extra_metrics = kwargs.pop("extra_metrics", None)
         extra_metrics_names = kwargs.pop("extra_metrics_names", None)
         
+        # Resolve extra metrics names 
         if extra_metrics_names is None and extra_metrics is not None:
             extra_metrics_names = [ex.__name__ for ex in extra_metrics]
         
+        # Instantiate the core summary
         self._original_instance = original_attack_summary(*args, **kwargs)
         
-        self.extra_metrics = {}
+        context = {
+            "control_labels": control_labels,
+            "control_preds": control_preds
+        }
         
+        self.extra_metrics = {}
         for name,metric in zip(extra_metrics_names, extra_metrics):
-            sig = inspect.signature(metric)
-            params = sig.parameters
-
-            # Check if the function explicitly asks for these two arguments
-            if "control_labels" in params and "control_preds" in params:
-                # This metric knows how to use control data (like DCAP)
-                 res = metric(
-                    self._original_instance.labels, 
-                    self._original_instance.predictions,
-                    control_labels=control_labels,
-                    control_preds=control_preds
-                )
-            else:
-                # This is a standard metric (like accuracy_score)
-                res = metric(
-                    self._original_instance.labels, 
-                    self._original_instance.predictions
-                )
             
-            # added to return multiple results
-            if res is dict:
-                for metric_name, metric_val in res.items():
-                    self.extra_metrics[metric_name] = [metric_val]
-            else:            
+            sig = inspect.signature(metric)
+            if "context" in sig.parameters:
+                # For metrics supporting context
+                res = metric( self._original_instance.labels, self._original_instance.predictions, context=context)
+            else:
+                # For standard (y_true, y_pred) metrics
+                res = metric(self._original_instance.labels, self._original_instance.predictions)
+
+            # Standardize multi-result dicts into a single extra_metrics store
+            if isinstance(res, dict):
+                for sub_name, val in res.items():
+                    self.extra_metrics[sub_name] = [val]
+            else:
                 self.extra_metrics[name] = [res]
         
-        #self.extra_metrics = {name: [metric(self._original_instance.labels, self._original_instance.predictions)] for name, metric in zip(extra_metrics_names, extra_metrics)}
-    
     def get_metrics(self):
-        return pd.concat(
-                [self._original_instance.get_metrics(), 
-                 pd.DataFrame(self.extra_metrics)], axis=1
-        ).round(3)
+        """Merges core results with extended metrics."""
+        core_df = self._original_instance.get_metrics()
+        extra_df = pd.DataFrame(self.extra_metrics)
+        return pd.concat([core_df, extra_df], axis=1).round(3)
 
     def __getattr__(self, name):
-        # Delegate attribute access to the original instance
+        """Delegates attribute access to the original instance."""
         return getattr(self._original_instance, name)
+
+
