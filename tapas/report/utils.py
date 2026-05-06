@@ -219,6 +219,95 @@ def plot_roc_curve(
     plt.savefig(os.path.join(output_path, filename))
 
     plt.close(fig)
+    
+def plot_asr_per_sensitive_attribute(data,output_path):
+    """Plot AIA related figures
+
+    Parameters
+    ----------
+    data: dataframe
+        Input dataframe from the MIAttackReport class
+    output_path: str
+        Path where the figure is to be saved.
+    
+    """
+    set_style()
+        
+    data['n_qis'] = data['quasi_identifiers'].apply(lambda x: len(x))
+
+    has_accuracy = 'accuracy' in data.columns and data['accuracy'].notna().any()
+
+    n_qis_levels = sorted(data['n_qis'].unique())
+    if not os.path.exists(output_path):
+        os.makedirs(output_path)
+
+    for qis_val in n_qis_levels:
+        qis_df = data[data['n_qis'] == qis_val].copy()
+        sensitive_attributes = qis_df['sensitive_attribute'].unique()
+        n_rows = len(sensitive_attributes)
+
+        fig, axes = plt.subplots(n_rows, 1, figsize=(14, 8 * n_rows), squeeze=False)
+
+        for i, attr in enumerate(sensitive_attributes):
+            ax1 = axes[i, 0]
+            attr_data = qis_df[qis_df['sensitive_attribute'] == attr].copy()
+            if not has_accuracy:
+                print("Error: No accuracy data found for sensitive attribute or does not applies.")
+            else:
+                attr_data['attack_label'] = attr_data['attack'].apply(lambda x: str(x).split('(')[0])
+                
+                ax1.set_axisbelow(True) 
+                ax1.yaxis.grid(True, linestyle='--', color='#DDDDDD', alpha=0.5, zorder=0)
+                
+                # Filter by worst case attack depending on number of qis  attributes
+                attr_data = attr_data.reset_index()
+                idx = attr_data.groupby('attack_label')['accuracy'].idxmax()
+                result = attr_data.loc[idx]
+                
+                x = np.arange(len(result))
+                width = 0.25
+                
+                b1 = ax1.bar(x - width, result['accuracy'], width, label='Member Success', color='#56B4E9', zorder=3)
+                if 'accuracy_control' in result.columns: 
+                    b2 = ax1.bar(x, result['accuracy_control'], width, label='Non Member Success', color='#E69F00', zorder=3)
+                
+                
+                ax1.bar_label(b1, labels=[f'{v.get_height()*100:.0f}%' for v in b1], padding=3, fontsize=8, zorder=5)
+                if 'accuracy_control' in result.columns: 
+                    ax1.bar_label(b2, labels=[f'{v.get_height()*100:.0f}%' for v in b2], padding=3, fontsize=8, zorder=5)
+                
+                ax1.set_xticks(x)
+                ax1.set_xticklabels(result['attack_label'])
+
+                # --- Formatting ---
+                ax1.set_title(f"QIS COUNT: {qis_val} | ATTRIBUTE: {attr.upper()}", 
+                            loc='left', fontsize=11, fontweight='bold', pad=20)
+                
+                ax1.set_ylabel("Attack Success Rate (%)", fontweight='bold')
+                                
+                for ax in [ax1]:
+                    ax.set_ylim(0, 1.1)
+                    ax.yaxis.set_major_formatter(plt.FuncFormatter(lambda val, _: f'{val:.0%}'))
+                    # Hide top/side spines for a cleaner look
+                    ax.spines['top'].set_visible(False)
+                
+                ax1.spines['right'].set_visible(False)
+                
+                if 'accuracy_baseline' in result.columns:
+                    baseline = attr_data['accuracy_baseline'].mean()
+                    ax1.axhline(baseline, color='#D55E00', linestyle=':', linewidth=2, label='Avg Baseline', zorder=6)
+                
+                ax1.legend(
+                    loc='upper center',
+                    bbox_to_anchor=(0.5, 1.15),
+                    ncol=3,
+                    frameon=False
+                )
+                
+                filename = f"attribute_disclosure_{attr}_nqis{qis_val}.png"         
+                plt.tight_layout(rect=[0, 0, 1, 0.94])
+                plt.savefig(os.path.join(output_path, filename),dpi=300, bbox_inches='tight')
+                plt.close(fig)    
 
 
 def set_style():
@@ -244,8 +333,8 @@ def set_style():
             "font.family": "sans-serif",
             "font.sans-serif": ["Tahoma", "DejaVu Sans", "Arial", "Liberation Sans"],
             "font.size": 10,
-            "xtick.labelsize": 14,
-            "ytick.labelsize": 14,
+            "xtick.labelsize": 12,
+            "ytick.labelsize": 12,
             "axes.labelsize": 16,
             "axes.titlesize": 16,
             "savefig.dpi": 75,

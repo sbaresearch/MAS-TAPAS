@@ -15,7 +15,7 @@ from scipy.stats import binomtest
 import warnings
 
 from .attack_summary import AttackSummary, MIAttackSummary
-from .utils import metric_comparison_plots, plot_roc_curve, DEFAULT_METRICS
+from .utils import metric_comparison_plots, plot_roc_curve, plot_asr_per_sensitive_attribute, DEFAULT_METRICS
 
 class Report(ABC):
     """
@@ -31,7 +31,7 @@ class Report(ABC):
         Compare the outcome of attacks, potentially on different threat models.
 
         """
-        pass
+        
 
 
 class BinaryLabelAttackReport(Report):
@@ -191,6 +191,10 @@ class BinaryLabelAttackReport(Report):
         print(f"All figures saved to directory {filepath}")
 
 
+
+    
+    
+
 class MIAttackReport(BinaryLabelAttackReport):
     """
     Report for a Membership Inference Attack.
@@ -257,6 +261,16 @@ class BinaryAIAttackReport(MIAttackReport):
     """
 
     # This is functionally identical to MIAttackReport.
+    
+class AIAAttackReport(MIAttackReport):
+    """
+    Report for Attribute Disclosure Attack
+    
+    """
+    def publish(self, filepath):
+        
+        plot_asr_per_sensitive_attribute(data= self.attacks_data, output_path=filepath)
+        
 
 
 class ROCReport(Report):

@@ -254,7 +254,6 @@ class NoBoxThreatModelAIA(ThreatModel):
         
         self.atk_know_data = attacker_knowledge_data
         self.atk_know_gen = attacker_knowledge_generator
-        self.sensitive_attribute = sensitive_attribute
         self.attribute_values = attribute_values       
         self.quasi_identifiers = quasi_identifiers
         self.sensitive_attribute = sensitive_attribute 
