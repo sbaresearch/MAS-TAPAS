@@ -10,7 +10,7 @@ def extend_threat_model(threat_model, extra_metrics, extra_metrics_names=None):
     ReportClass = MIAttackSummary
     kwargs = {}
     if isinstance(threat_model, TargetedAIA | NoBoxThreatModelAIA):
-        kwargs = {"sensitive_attribute": threat_model.sensitive_attribute}
+        kwargs = {"sensitive_attribute": threat_model.sensitive_attribute, "quasi_identifiers":threat_model.quasi_identifiers}
         if len(threat_model.attribute_values) == 2:
             ReportClass = BinaryAIAttackSummary
             kwargs["positive_value"] = threat_model.attribute_values[1]
