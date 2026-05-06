@@ -233,57 +233,68 @@ def plot_asr_per_sensitive_attribute(data,output_path):
     """
     set_style()
         
-    data['n_qis'] = data['quasi_identifiers'].apply(lambda x: len(x))
+    df = data.copy(deep=True)    
+    
+    df['n_qis'] = df['quasi_identifiers'].apply(lambda x: len(x))
 
-    has_accuracy = 'accuracy' in data.columns and data['accuracy'].notna().any()
+    has_accuracy = 'accuracy' in df.columns and df['accuracy'].notna().any()
 
-    n_qis_levels = sorted(data['n_qis'].unique())
+    n_qis_levels = sorted(df['n_qis'].unique())
+
     if not os.path.exists(output_path):
         os.makedirs(output_path)
 
     for qis_val in n_qis_levels:
-        qis_df = data[data['n_qis'] == qis_val].copy()
+        qis_df = df[df['n_qis'] == qis_val].copy()
         sensitive_attributes = qis_df['sensitive_attribute'].unique()
         n_rows = len(sensitive_attributes)
 
-        fig, axes = plt.subplots(n_rows, 1, figsize=(14, 8 * n_rows), squeeze=False)
-
         for i, attr in enumerate(sensitive_attributes):
-            ax1 = axes[i, 0]
-            attr_data = qis_df[qis_df['sensitive_attribute'] == attr].copy()
+            fig, ax1 = plt.subplots(figsize=(14, 8))
+            attr_df = qis_df[qis_df['sensitive_attribute'] == attr].copy()
             if not has_accuracy:
-                print("Error: No accuracy data found for sensitive attribute or does not applies.")
+                print("Error: No accuracy df found for sensitive attribute or does not applies.")
             else:
-                attr_data['attack_label'] = attr_data['attack'].apply(lambda x: str(x).split('(')[0])
+                attr_df['attack_label'] = attr_df['attack'].apply(lambda x: str(x).split('(')[0])
                 
                 ax1.set_axisbelow(True) 
                 ax1.yaxis.grid(True, linestyle='--', color='#DDDDDD', alpha=0.5, zorder=0)
                 
                 # Filter by worst case attack depending on number of qis  attributes
-                attr_data = attr_data.reset_index()
-                idx = attr_data.groupby('attack_label')['accuracy'].idxmax()
-                result = attr_data.loc[idx]
+                attr_df = attr_df.reset_index()
+                idx = attr_df.groupby('attack_label')['accuracy'].idxmax()
+                result = attr_df.loc[idx]
                 
                 x = np.arange(len(result))
-                width = 0.25
+                width = 0.3
+
+                if 'accuracy_control' in result:
+                    # two bars → symmetric layout
+                    b1 = ax1.bar(x - width/2, result['accuracy'], width,
+                                label='Member Success', color='#56B4E9', zorder=3)
+
+                    b2 = ax1.bar(x + width/2, result['accuracy_control'], width,
+                                label='Non Member Success', color='#E69F00', zorder=3)
+
+                else:
+                    # one bar → centered
+                    b1 = ax1.bar(x, result['accuracy'], width,
+                                label='Member Success', color='#56B4E9', zorder=3)
                 
-                b1 = ax1.bar(x - width, result['accuracy'], width, label='Member Success', color='#56B4E9', zorder=3)
+                
+                ax1.bar_label(b1, labels=[f'{v.get_height()*100:.0f}%' for v in b1], padding=3, fontsize=12, zorder=5)
                 if 'accuracy_control' in result.columns: 
-                    b2 = ax1.bar(x, result['accuracy_control'], width, label='Non Member Success', color='#E69F00', zorder=3)
-                
-                
-                ax1.bar_label(b1, labels=[f'{v.get_height()*100:.0f}%' for v in b1], padding=3, fontsize=8, zorder=5)
-                if 'accuracy_control' in result.columns: 
-                    ax1.bar_label(b2, labels=[f'{v.get_height()*100:.0f}%' for v in b2], padding=3, fontsize=8, zorder=5)
+                    ax1.bar_label(b2, labels=[f'{v.get_height()*100:.0f}%' for v in b2], padding=3, fontsize=12, zorder=5)
                 
                 ax1.set_xticks(x)
                 ax1.set_xticklabels(result['attack_label'])
 
                 # --- Formatting ---
-                ax1.set_title(f"QIS COUNT: {qis_val} | ATTRIBUTE: {attr.upper()}", 
-                            loc='left', fontsize=11, fontweight='bold', pad=20)
+                ax1.set_title(f"KNOWN ATTRIBUTES COUNT: {qis_val} | SENSITIVE ATTRIBUTE: {attr.upper()}", 
+                            loc='left', fontsize=12, fontweight='bold', pad=20)
                 
                 ax1.set_ylabel("Attack Success Rate (%)", fontweight='bold')
+                ax1.set_xlabel("Attack Name", fontweight='bold')
                                 
                 for ax in [ax1]:
                     ax.set_ylim(0, 1.1)
@@ -294,8 +305,8 @@ def plot_asr_per_sensitive_attribute(data,output_path):
                 ax1.spines['right'].set_visible(False)
                 
                 if 'accuracy_baseline' in result.columns:
-                    baseline = attr_data['accuracy_baseline'].mean()
-                    ax1.axhline(baseline, color='#D55E00', linestyle=':', linewidth=2, label='Avg Baseline', zorder=6)
+                    baseline = attr_df['accuracy_baseline'].mean()
+                    ax1.axhline(baseline, color='#D55E00', linestyle=':', linewidth=2, label='Naive Baseline', zorder=6)
                 
                 ax1.legend(
                     loc='upper center',
