@@ -26,6 +26,19 @@ from ..report import MIAttackSummary
 import numpy as np
 import warnings
 
+class MIA:
+    """
+    Minimal interface for Membership Inference Attacks.
+    Any threat model that wants to run MIA attacks can inherit from this.
+    """
+
+    @property
+    def target_record(self):
+        """
+        The record that the attack tries to infer membership for.
+        Must be provided by any subclass.
+        """
+        raise NotImplementedError
 
 class MIALabeller(AttackerKnowledgeWithLabel):
     """
@@ -236,3 +249,251 @@ class TargetedMIA(LabelInferenceThreatModel):
         LabelInferenceThreatModel.set_label(self, label)
         # We also set self.target_record, to be used by .
         self.target_record = self._target_records[label]
+
+class PostHocThreatModelMIA(ThreatModel):
+    """
+    Some threat models considered using only synthetic datasets generated as 
+    the attacker's knowledge.
+
+    """
+    def __init__(
+        self,
+        training_dataset: Dataset,
+        synthetic_datasets: list[Dataset],
+        reference_dataset: Dataset,
+        membership_labels: list[int],   # 1 if target was in training set, 0 otherwise
+        attacker_knowledge_data: AttackerKnowledgeOnData,
+        target_record: Dataset,
+        attacker_knowledge_generator: AttackerKnowledgeOnGenerator,
+    ):
+        
+        self.synthetic_datasets = synthetic_datasets
+        self.labels = membership_labels
+        self.num_labels=len(target_record)
+        self._target_records = [r for r in target_record]
+        self.target_record = self._target_records[0]
+        self.atk_know_gen = attacker_knowledge_generator
+        self.atk_know_data = attacker_knowledge_data
+        
+    def set_label(self, i: int):
+        self.target_record = self._target_records[i]
+
+    def test(self, attack, *args, **kwargs):
+        attack.threat_model = self
+        attack.positive_label = 1
+        attack.negative_label = 0
+
+        all_truth = []
+        all_pred = []
+        all_scores = []
+
+        for i in range(self.num_labels):
+            self.set_label(i)
+            pred_labels = attack.attack(self.synthetic_datasets)
+            scores = attack.attack_score(self.synthetic_datasets)
+            
+            all_pred.append(pred_labels)
+            all_scores.append(scores)
+
+        # stack results per target
+        truth = self.labels
+        preds = np.vstack(all_pred)
+        scores = np.vstack(all_scores)
+
+        return self._wrap_output(truth, preds, scores, attack)
+
+    def _wrap_output(self, truth_labels, pred_labels, scores, attack):
+        if self.num_labels > 1:
+            target_id = "all"#",".join([rec.label for rec in self._target_records])
+        else:
+            target_id = self.target_record.label
+        return MIAttackSummary(
+            truth_labels,
+            pred_labels,
+            scores,
+            generator_info=self.atk_know_gen.label,
+            attack_info=attack.label,
+            dataset_info="Ground Truth",
+            target_id=target_id,
+        )
+    
+class NoBoxThreatModelMIA(ThreatModel):
+    """
+    Post Hoc Threat model for a no-box synthetic data scenario.
+    
+    Assumptions:
+    - Attacker only has access to synthetic data (or multiple synthetic datasets).
+    - Attacker may have auxiliary data from the same distribution.
+    - Attacker wants to infer membership of records in the dataset used for training .
+    """
+    def __init__(self,
+                attacker_knowledge_data: AttackerKnowledgeOnData, 
+                attacker_knowledge_generator: AttackerKnowledgeOnGenerator,
+                training_data: Dataset,
+                num_targets: int = None,
+                
+    ):
+        
+        # Check that the targets are not already in the attackers knowledge data.
+        self._assert_non_membership(training_data, attacker_knowledge_data)
+        
+        self.attacker_knowledge_data = attacker_knowledge_data
+        self.atk_know_gen = attacker_knowledge_generator
+        self.training_data = training_data
+        self.num_targets = num_targets
+        self.target_record = self._target_records[0]
+        
+        #self.member_frac = 0.5
+        #self._target_records,self.true_labels = self._build_ground_truth()
+        
+        #self.num_labels = len(self._target_records) 
+
+         
+    def _build_ground_truth(
+        self,
+        member_indices: list = None
+    ):
+        """
+        Construct target records and ground truth labels for evaluation.
+        
+        Returns
+        -------
+        target_records: Dataset
+        true_labels: list[int]
+        """
+        
+        # Uses a subset of auxiliary data (test data) as non members 
+        test_data = self.attacker_knowledge_data.test_data
+        
+        if member_indices is None:
+            num_members = min(len(self.training_data.data), len(test_data.data))
+            members = self.training_data.sample(num_members)
+            num_nonmembers = num_members # Maintain 50/50
+        else:
+            # Use the specific disjoint slice provided by the test loop
+            members = self.training_data.get_records(member_indices)
+            num_members = len(member_indices)
+            # To maintain 50/50, we use an equal number of non-members
+            # (Or use all non-members if you prefer, but 1:1 is standard)
+            num_nonmembers = num_members
+            
+        # Ensure we don't request more non-members than we have
+        num_nonmembers = min(num_nonmembers, len(test_data.data))
+        nonmembers = test_data.sample(num_nonmembers)
+        
+        target_records = members.add_records(nonmembers)
+        true_labels = [[1]] * len(members.data) + [[0]] * len(nonmembers.data)
+                
+        # if self.num_targets is None:
+        #     count = min(len(self.training_data.data), len(test_data.data))
+        #     num_members = int(count * self.member_frac)
+        #     num_nonmembers = int(count * (1 - self.member_frac))
+        
+        # else:
+        #     num_members = int(self.num_targets * self.member_frac)
+        #     num_nonmembers = self.num_targets - num_members
+        
+        # if num_members > len(self.training_data.data):
+        #     raise ValueError(f"Requested {num_members} members, but only {len(self.training_data.data)} exist.")
+        # if num_nonmembers > len(test_data.data):
+        #     raise ValueError(f"Requested {num_nonmembers} non-members, but only {len(test_data.data)} exist.")
+        
+        # # 2. Sample and combine
+        # members = self.training_data.sample(num_members)
+        # nonmembers = test_data.sample(num_nonmembers)
+        
+        # target_records = members.add_records(nonmembers)
+        # true_labels = [[1]] * num_members + [[0]] * num_nonmembers
+        
+        # if num_targets is None:
+        #     # Use all records
+        #     target_records = training_data.add_records(test_data)
+        #     true_labels = (
+        #             [[1]] * len(training_data.data) +
+        #             [[0]] * len(test_data.data)
+        #         )
+        # else:
+        #     # Determine number of members and non-members
+        #     num_nonmembers = min(int(num_targets * (1 - member_frac)), len(test_data.data))
+        #     num_members = num_targets - num_nonmembers
+
+        #     member_targets = training_data.sample(num_members)
+        #     nonmember_targets = test_data.sample(num_nonmembers)
+
+        #     target_records = member_targets.add_records(nonmember_targets)
+        #     true_labels = [[1]] * num_members + [[0]] * num_nonmembers
+
+        return target_records, true_labels
+
+
+    def test(self, attack):
+
+        """
+        Evaluate an Attack object against this threat model using the test data.
+        Returns metrics such as membership inference accuracy.
+        """
+               
+        synthetic_datasets = self.atk_know_gen.generate(None, training_mode=False)
+        
+        # 2. Shuffle members once to ensure blocks are random but disjoint
+        member_indices = list(range(len(self.training_data.data)))
+        np.random.seed(42) 
+        np.random.shuffle(member_indices)
+        
+        # Determine block size based on non-member availability to keep 1:1 ratio
+        block_size = len(self.attacker_knowledge_data.test_data.data)
+        summaries = []
+        
+        iterations = len(member_indices) // block_size
+        
+        for i in range(0,iterations):
+            start_idx = i * block_size
+            end_idx = start_idx + block_size
+            
+            current_block = member_indices[start_idx:end_idx]
+            
+            # Build ground truth for this specific 50/50 fold
+            self._target_records, self.true_labels = self._build_ground_truth(member_indices=current_block)
+            
+            # 2. Get results for all targets at once
+            # This calls SynthMiaTapasWrapper.attack_score()
+            scores = attack.attack_score([synthetic_datasets])
+            preds = attack.attack([synthetic_datasets])
+            
+            # 3. Align truth labels (Convert list of lists to numpy array)
+            truth_labels = np.array(self.true_labels).reshape(-1, 1)
+            
+            summaries.append(self._wrap_output(truth_labels, preds, scores, attack, dataset_info='fold_{i}'))
+        
+        
+        # for i in range(self.num_labels):
+        #     self.set_label(i)
+        #     pred_labels = attack.attack([synthetic_datasets])
+        #     scores = attack.attack_score([synthetic_datasets])
+            
+        #     all_pred.append(pred_labels)
+        #     all_scores.append(scores)
+
+        # # stack results per target
+        # truth_labels = np.vstack(self.true_labels)
+        # preds = np.vstack(all_pred)
+        # scores = np.vstack(all_scores)        
+
+        return summaries
+
+    def _wrap_output(self, truth_labels, pred_labels, scores, attack,dataset_info):
+        target_id = "all"#",".join([rec.label for rec in self._target_records])
+        return MIAttackSummary(
+            truth_labels,
+            pred_labels,
+            scores,
+            generator_info=self.atk_know_gen.label,
+            attack_info=attack.label,
+            dataset_info=dataset_info,
+            target_id=target_id,
+        )
+        
+    def set_label(self, i: int):
+        self.target_record = self._target_records[i]
+
+        
