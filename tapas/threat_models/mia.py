@@ -329,171 +329,115 @@ class NoBoxThreatModelMIA(ThreatModel):
     def __init__(self,
                 attacker_knowledge_data: AttackerKnowledgeOnData, 
                 attacker_knowledge_generator: AttackerKnowledgeOnGenerator,
-                training_data: Dataset,
-                num_targets: int = None,
-                
+                target_records: Dataset
     ):
-        
+                
         # Check that the targets are not already in the attackers knowledge data.
-        self._assert_non_membership(training_data, attacker_knowledge_data)
+        self._assert_non_membership(target_records, attacker_knowledge_data)
         
         self.attacker_knowledge_data = attacker_knowledge_data
         self.atk_know_gen = attacker_knowledge_generator
-        self.training_data = training_data
-        self.num_targets = num_targets
-        self.target_record = self._target_records[0]
+        self.training_data = target_records
         
-        #self.member_frac = 0.5
-        #self._target_records,self.true_labels = self._build_ground_truth()
-        
-        #self.num_labels = len(self._target_records) 
-
          
     def _build_ground_truth(
         self,
-        member_indices: list = None
+        balance: bool = False
     ):
         """
-        Construct target records and ground truth labels for evaluation.
+        Construct ground truth labels for evaluation based on training and testing data provided.
+        
+        Parameters
+        ----------
+        balance : bool, default=False
+            If True, subsample the larger class to obtain
+            a balanced member/non-member evaluation set.
         
         Returns
         -------
-        target_records: Dataset
+        target_records : Dataset
+            Combined member and non-member records.
+
         true_labels: list[int]
+            Binary membership labels:
+                1 -> member
+                0 -> non-member
         """
         
+        # Training data used for synthetic data generation is selected as members
+        members = self.training_data
+        
         # Uses a subset of auxiliary data (test data) as non members 
-        test_data = self.attacker_knowledge_data.test_data
+        non_members = self.attacker_knowledge_data.test_data
         
-        if member_indices is None:
-            num_members = min(len(self.training_data.data), len(test_data.data))
-            members = self.training_data.sample(num_members)
-            num_nonmembers = num_members # Maintain 50/50
-        else:
-            # Use the specific disjoint slice provided by the test loop
-            members = self.training_data.get_records(member_indices)
-            num_members = len(member_indices)
-            # To maintain 50/50, we use an equal number of non-members
-            # (Or use all non-members if you prefer, but 1:1 is standard)
-            num_nonmembers = num_members
-            
-        # Ensure we don't request more non-members than we have
-        num_nonmembers = min(num_nonmembers, len(test_data.data))
-        nonmembers = test_data.sample(num_nonmembers)
-        
-        target_records = members.add_records(nonmembers)
-        true_labels = [[1]] * len(members.data) + [[0]] * len(nonmembers.data)
+        # Optional balancing
+        if balance:
+            # Get the smallest set between members and non-members
+            n = min(len(members.data), len(non_members.data))
+
+            if len(members.data) > n:
+                members = members.sample(n)
+
+            if len(non_members.data) > n:
+                non_members = non_members.sample(n)
                 
-        # if self.num_targets is None:
-        #     count = min(len(self.training_data.data), len(test_data.data))
-        #     num_members = int(count * self.member_frac)
-        #     num_nonmembers = int(count * (1 - self.member_frac))
+        # Construct evaluation set
+        target_records = members.add_records(non_members)
         
-        # else:
-        #     num_members = int(self.num_targets * self.member_frac)
-        #     num_nonmembers = self.num_targets - num_members
-        
-        # if num_members > len(self.training_data.data):
-        #     raise ValueError(f"Requested {num_members} members, but only {len(self.training_data.data)} exist.")
-        # if num_nonmembers > len(test_data.data):
-        #     raise ValueError(f"Requested {num_nonmembers} non-members, but only {len(test_data.data)} exist.")
-        
-        # # 2. Sample and combine
-        # members = self.training_data.sample(num_members)
-        # nonmembers = test_data.sample(num_nonmembers)
-        
-        # target_records = members.add_records(nonmembers)
-        # true_labels = [[1]] * num_members + [[0]] * num_nonmembers
-        
-        # if num_targets is None:
-        #     # Use all records
-        #     target_records = training_data.add_records(test_data)
-        #     true_labels = (
-        #             [[1]] * len(training_data.data) +
-        #             [[0]] * len(test_data.data)
-        #         )
-        # else:
-        #     # Determine number of members and non-members
-        #     num_nonmembers = min(int(num_targets * (1 - member_frac)), len(test_data.data))
-        #     num_members = num_targets - num_nonmembers
-
-        #     member_targets = training_data.sample(num_members)
-        #     nonmember_targets = test_data.sample(num_nonmembers)
-
-        #     target_records = member_targets.add_records(nonmember_targets)
-        #     true_labels = [[1]] * num_members + [[0]] * num_nonmembers
+        true_labels = [[1]] * len(members) + [[0]] * len(non_members)
 
         return target_records, true_labels
 
 
-    def test(self, attack):
+    def test(self, attack, balance=False):
 
         """
-        Evaluate an Attack object against this threat model using the test data.
-        Returns metrics such as membership inference accuracy.
+        Evaluate an Attack object against this threat model.
         """
-               
-        synthetic_datasets = self.atk_know_gen.generate(None, training_mode=False)
         
-        # 2. Shuffle members once to ensure blocks are random but disjoint
-        member_indices = list(range(len(self.training_data.data)))
-        np.random.seed(42) 
-        np.random.shuffle(member_indices)
+        # Get the synthetic datasets.
+        synthetic_datasets = [self.atk_know_gen.generate(None, training_mode=False)]
         
-        # Determine block size based on non-member availability to keep 1:1 ratio
-        block_size = len(self.attacker_knowledge_data.test_data.data)
-        summaries = []
+        self._target_records, self.true_labels = self._build_ground_truth(balance=balance)
         
-        iterations = len(member_indices) // block_size
-        
-        for i in range(0,iterations):
-            start_idx = i * block_size
-            end_idx = start_idx + block_size
-            
-            current_block = member_indices[start_idx:end_idx]
-            
-            # Build ground truth for this specific 50/50 fold
-            self._target_records, self.true_labels = self._build_ground_truth(member_indices=current_block)
-            
-            # 2. Get results for all targets at once
-            # This calls SynthMiaTapasWrapper.attack_score()
-            scores = attack.attack_score([synthetic_datasets])
-            preds = attack.attack([synthetic_datasets])
-            
-            # 3. Align truth labels (Convert list of lists to numpy array)
-            truth_labels = np.array(self.true_labels).reshape(-1, 1)
-            
-            summaries.append(self._wrap_output(truth_labels, preds, scores, attack, dataset_info='fold_{i}'))
-        
-        
-        # for i in range(self.num_labels):
-        #     self.set_label(i)
-        #     pred_labels = attack.attack([synthetic_datasets])
-        #     scores = attack.attack_score([synthetic_datasets])
-            
-        #     all_pred.append(pred_labels)
-        #     all_scores.append(scores)
+        pred_labels = attack.attack(synthetic_datasets)
+        scores = attack.attack_score(synthetic_datasets)         
 
-        # # stack results per target
-        # truth_labels = np.vstack(self.true_labels)
-        # preds = np.vstack(all_pred)
-        # scores = np.vstack(all_scores)        
+        return self._wrap_output(self.true_labels, pred_labels, scores, attack)
 
-        return summaries
-
-    def _wrap_output(self, truth_labels, pred_labels, scores, attack,dataset_info):
-        target_id = "all"#",".join([rec.label for rec in self._target_records])
+    def _wrap_output(self, truth_labels, pred_labels, scores, attack):
+        
+        target_id = "all"
         return MIAttackSummary(
             truth_labels,
             pred_labels,
             scores,
             generator_info=self.atk_know_gen.label,
             attack_info=attack.label,
-            dataset_info=dataset_info,
+            dataset_info="Ground Truth",
             target_id=target_id,
         )
         
-    def set_label(self, i: int):
-        self.target_record = self._target_records[i]
+    def _assert_non_membership(self, target_record, attacker_knowledge_data):
+        """
+        Checks that target records are not used in the attacker knowledge's data.
+
+        This does not raise an error but a warning that can be ignored. However,
+        in most cases, it is recommended to ensure that target records are not also
+        found in the auxiliary data, as this may make the task of inferring membership
+        less meaningful: i.e., although "the" target record was not added to the
+        dataset, another identical record is present in that data.
+
+        """
+        # Get all records used to simulate real training data.
+        data_used = attacker_knowledge_data._get_data()
+        num_records_found_in_data = sum([(r in data_used) for r in target_record])
+        if num_records_found_in_data > 0:
+            warnings.warn(
+                f"{num_records_found_in_data} target record(s) were found in the auxiliary data. "
+                + "This is not recommended: it is best to remove target records to avoid duplicates "
+                + "and ensure that the task of membership inference is meaningful."
+            )
+        
 
         
