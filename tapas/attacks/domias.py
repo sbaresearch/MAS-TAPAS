@@ -12,7 +12,7 @@ from scipy import stats
 
 
 # domias absolute
-from .bnaf import compute_log_p_x, density_estimator_trainer, normal_func_feat
+from .third_party.bnaf import compute_log_p_x, density_estimator_trainer, normal_func_feat
 from .base_classes import Attack
 from .utils import verbosed
 
@@ -31,7 +31,7 @@ class DOMIASAttack(Attack):
         self.density_estimator = density_estimator.lower()
         self.trained = False
         self._label = label
-        self.verbose = verbose
+        self.verbose = verbose 
 
     @property
     def label(self):
@@ -41,7 +41,7 @@ class DOMIASAttack(Attack):
         self.threat_model = threat_model
         
         self.reference_set = self.threat_model.atk_know_data.attacker_knowledge._get_data().as_numeric
-
+        
         if self.density_estimator == "prior":
             # Fit a multivariate normal distribution to features
             continuous = []

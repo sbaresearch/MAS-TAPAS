@@ -9,6 +9,8 @@ to make inferences about those real records.
 from __future__ import annotations
 from typing import TYPE_CHECKING
 
+from tapas.threat_models.aia import NoBoxThreatModelAIA
+
 if TYPE_CHECKING:
     from ..datasets import Dataset, DataDescription
     from ..threat_models import ThreatModel
@@ -226,7 +228,7 @@ class LocalNeighbourhoodAttack(TrainableThresholdAttack):
         # First, check that the attack model is compatible.
         if isinstance(self.threat_model, TargetedMIA):
             mia = True
-        elif isinstance(self.threat_model, TargetedAIA):
+        elif isinstance(self.threat_model, TargetedAIA | NoBoxThreatModelAIA):
             mia = False
         else:
             raise Exception("Unsupported threat model.")
