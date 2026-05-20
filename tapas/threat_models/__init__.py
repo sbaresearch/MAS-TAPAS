@@ -10,6 +10,6 @@ from .attacker_knowledge import (
     UncertainBoxKnowledge,
     LabelInferenceThreatModel,
 )
-from .mia import TargetedMIA
+from .mia import TargetedMIA, MIA, NoBoxThreatModelMIA
 from .aia import TargetedAIA, NoBoxThreatModelAIA
 from .utils import extend_threat_model

@@ -203,7 +203,6 @@ class AuxiliaryDataKnowledge(AttackerKnowledgeOnData):
         """Returns the auxiliary data used for train and test."""
         return self.aux_data + self.test_data
 
-
 class ExactDataKnowledge(AttackerKnowledgeOnData):
     """
     Also called worst-case attack, this assumes that the attacker knows the
@@ -729,64 +728,3 @@ class LabelInferenceThreatModel(TrainableThreatModel):
             yield self
 
 
-# class MLThreatModel(TrainableThreatModel):
-
-#     def __init__(
-#         self,
-#         attacker_knowledge_data: AttackerKnowledgeWithLabel,
-#         attacker_knowledge_generator: AttackerKnowledgeOnGenerator,
-#         memorise_datasets=True,
-#         iterator_tracker: Optional[type] = None,
-#         num_labels: int = 1,
-#         num_concurrent: int = 1,
-#     ):
-#         """
-#         Generate a Label-Inference Threat Model.
-
-#         Parameters
-#         ----------
-#         attacker_knowledge_data: AttackerKnowledgeWithLabel
-#             The knowledge on data available to the attacker, which includes a
-#             label that the attack aims to predict.
-#         attacker_knowledge_generator: AttackerKnowledgeOnGenerator
-#             The knowledge on the generator available to the attacker.
-#         memorise_datasets: boolean, default True
-#             Whether to memoise the synthetic datasets generated,
-#         iterator_tracker: type.
-#             A class used to track iterations. The constructor should take the keyword
-#             argument `total` that is the length of the iterable to track. Instances
-#             should have methods `update(n: int)` and `close()` to mark iterations done
-#             and perform clean up. iterator_tracker can be used to track progress, e.g.
-#             with tqdm. Default is a silent tracker that does nothing. Note that this
-#             tracker is only used for synthetic data generation, which is often the
-#             bottleneck, and not training data generation.
-#         num_labels: int, default 1
-#             Number of labels output by attacker_knowledge_data. If >1, the
-#             labels are disaggregated and treated as multiple indepedent labels.
-#             This enables "multiple-label" mode, where this object can be used
-#             as a threat model against any one label at a time. This mode exists
-#             for efficiency reasons, allowing the same synthetic datasets to be
-#             reused for several threat models.
-#         num_concurrent: int, default 1
-#             Number of samples to generate concurrently when creating training and
-#             testing data. The implementation uses asyncio. Note that the computations
-#             are not run in parallel but rather concurrently in an event loop. Having
-#             num_concurrent > 1 is only useful if generating synthetic data is I/O heavy
-#             and uses coroutines and `await`s.
-#         """
-#         self.atk_know_data = attacker_knowledge_data
-#         self.atk_know_gen = attacker_knowledge_generator
-#         # Also, handle the memoisation to prevent recomputing datasets.
-#         self.memorise_datasets = memorise_datasets
-#         self.iterator_tracker = iterator_tracker or SilentIterator
-#         # maps training = True/False -> list of datasets, list of labels.
-#         self._memory = {True: ([], []), False: ([], [])}
-#         # Multiple-label mode.
-#         self.num_labels = num_labels
-#         self.num_concurrent = num_concurrent
-#         self.multiple_label_mode = num_labels > 1
-#         if self.multiple_label_mode:
-#             # Multiple-label mode: all interactions with this object occur as
-#             # if there was only one label: the `self.current_label`th entry
-#             # in the label vector returned by samples.
-#             self.current_label = 0
