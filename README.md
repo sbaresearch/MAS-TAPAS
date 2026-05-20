@@ -2,7 +2,7 @@
 
 # MAS-TAPAS: Extension of a Toolbox for Adversarial Privacy Auditing of Synthetic Data
 
-Evaluating the privacy of synthetic data with an adversarial toolbox. This code extends the TAPAS toolbox presented in [the associated paper](https://arxiv.org/abs/2211.06550) with additional attacks, threat models and metrics.
+Evaluating the privacy of synthetic data with an adversarial toolbox. This code extends the TAPAS toolbox presented in [the associated paper](https://arxiv.org/abs/2211.06550) with additional attacks, threat models and metrics, including attacks provided in [Synth-MIA](https://github.com/joshward96/Synth-MIA) which are specific for the No-Box scenario. To ensure interoperability and align the evaluation frameworks, we implemented a custom integration wrapper and expanded the available threat models.
 
 [Documentation.](https://tapas-privacy.readthedocs.io/en/latest/index.html)
 
@@ -11,7 +11,12 @@ Evaluating the privacy of synthetic data with an adversarial toolbox. This code 
 
 If you use this toolbox for a scientific publication, we kindly ask you to reference the paper:
 
-	Houssiau, F., Jordon, J., Cohen, S.N., Daniel, O., Elliott, A., Geddes, J., Mole, C., Rangel-Smith, C. and Szpruch, L., 2022. _TAPAS: a toolbox for adversarial privacy auditing of synthetic data._
+	Houssiau, F., Jordon, J., Cohen, S.N., Daniel, O., Elliott, A., Geddes, J., Mole, C., Rangel-Smith, C. and Szpruch, L., 2022. _TAPAS: a toolbox for adversarial privacy auditing of synthetic data.
+
+This extension also incorporates components from the following software:
+
+  Ward, J. et al., 2025. Synth-MIA: A Privacy Leakage Auditing Tool for Synthetic Data. Source code available at https://github.com/joshward96/Synth-MIA.
+
 
 In `BibTex`:
 
