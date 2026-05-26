@@ -339,6 +339,9 @@ class NoBoxThreatModelMIA(ThreatModel):
         self.atk_know_gen = attacker_knowledge_generator
         self.training_data = target_records
         
+        # Store number of targets
+        self.num_labels = len(self.training_data)
+        
          
     def _build_ground_truth(
         self,
