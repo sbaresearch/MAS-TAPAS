@@ -38,8 +38,8 @@ class SynthMiaTapasWrapper(Attack):
         self.threat_model = threat_model
                  
         # If your threat model has auxiliary data, we store it as 'ref'
-        if hasattr(self.threat_model.attacker_knowledge_data, 'aux_data'):
-            self.ref_data = self.threat_model.attacker_knowledge_data.aux_data.as_numeric
+        if hasattr(self.threat_model.atk_know_data, 'aux_data'):
+            self.ref_data = self.threat_model.atk_know_data.aux_data.as_numeric
         
         
 

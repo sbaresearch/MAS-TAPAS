@@ -371,7 +371,7 @@ class NoBoxThreatModelMIA(ThreatModel):
         members = self.training_data
         
         # Uses a subset of auxiliary data (test data) as non members 
-        non_members = self.attacker_knowledge_data.test_data
+        non_members = self.atk_know_data.test_data
         
         # Optional balancing
         if balance:
