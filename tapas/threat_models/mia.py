@@ -335,7 +335,7 @@ class NoBoxThreatModelMIA(ThreatModel):
         # Check that the targets are not already in the attackers knowledge data.
         self._assert_non_membership(target_records, attacker_knowledge_data)
         
-        self.attacker_knowledge_data = attacker_knowledge_data
+        self.atk_know_data = attacker_knowledge_data
         self.atk_know_gen = attacker_knowledge_generator
         self.training_data = target_records
         
