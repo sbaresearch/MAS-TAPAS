@@ -329,7 +329,8 @@ class NoBoxThreatModelMIA(ThreatModel):
     def __init__(self,
                 attacker_knowledge_data: AttackerKnowledgeOnData, 
                 attacker_knowledge_generator: AttackerKnowledgeOnGenerator,
-                target_records: Dataset
+                target_records: Dataset,
+                target_data: str = 'all'
     ):
                 
         # Check that the targets are not already in the attackers knowledge data.
@@ -338,6 +339,7 @@ class NoBoxThreatModelMIA(ThreatModel):
         self.atk_know_data = attacker_knowledge_data
         self.atk_know_gen = attacker_knowledge_generator
         self.training_data = target_records
+        self.target_data = target_data
         
         # Store number of targets
         self.num_labels = len(self.training_data)
@@ -410,7 +412,7 @@ class NoBoxThreatModelMIA(ThreatModel):
 
     def _wrap_output(self, truth_labels, pred_labels, scores, attack):
         
-        target_id = "all"
+        
         return MIAttackSummary(
             truth_labels,
             pred_labels,
@@ -418,7 +420,7 @@ class NoBoxThreatModelMIA(ThreatModel):
             generator_info=self.atk_know_gen.label,
             attack_info=attack.label,
             dataset_info="Ground Truth",
-            target_id=target_id,
+            target_id=self.target_data,
         )
         
     def _assert_non_membership(self, target_record, attacker_knowledge_data):

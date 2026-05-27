@@ -32,6 +32,8 @@ def extend_threat_model(threat_model, extra_metrics, extra_metrics_names=None):
             
             if self.num_labels > 1:
                 target_id = ",".join([rec.label for rec in self._target_records])
+                if self.target_data == 'all':
+                    target_id = self.target_data
             else:
                 target_id = self.target_record.label
             # Otherwise, return the extended summary
