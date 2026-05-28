@@ -225,6 +225,7 @@ class NoBoxThreatModelAIA(ThreatModel):
         attacker_knowledge_data: AttackerKnowledgeOnData,
         attacker_knowledge_generator: AttackerKnowledgeOnGenerator,
         attribute_values: list = None,
+        target_data: str = None
     ):
         """
         Parameters
@@ -276,6 +277,7 @@ class NoBoxThreatModelAIA(ThreatModel):
         # Type of target attribute (Retrieved using schema from target records)
         self.sensitive_attribute_type = target_records.description.schema[target_records.description.columns.index(sensitive_attribute)]['type']
         
+        self.target_data = None
         
     def set_label(self, label: int, group='target'):
         """Sets the active record the attack will see."""

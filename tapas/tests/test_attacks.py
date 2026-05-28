@@ -2,7 +2,10 @@
 
 import unittest
 from unittest import TestCase
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
+import sys
+from tapas.attacks.third_party import synth_mia
+from tapas.attacks.third_party.synth_mia.base import BaseAttacker
 
 import numpy as np
 import pandas as pd
@@ -18,7 +21,6 @@ from tapas.threat_models import (
     BlackBoxKnowledge,
 )
 from tapas.generators import Raw
-import pytest
 
 # The classes being tested.
 from tapas.attacks import (
@@ -30,12 +32,16 @@ from tapas.attacks import (
     FeatureBasedSetClassifier,
     HammingDistance,
     LpDistance,
-    GeneralizedCAPAttack
+    GeneralizedCAPAttack, 
+    SynthMiaTapasWrapper,
+    LocalNeighbourhoodAttack
 )
 
 from sklearn.linear_model import LogisticRegression
 
 from tapas.threat_models.aia import NoBoxThreatModelAIA
+from tapas.threat_models.mia import NoBoxThreatModelMIA
+
 
 ## Test for closest-distance.
 dummy_data_description = DataDescription(
@@ -320,6 +326,74 @@ class TestGroundHog:
         attack = GroundhogAttack()
         attack.train(mia, num_samples=10)
         
+
+class TestLocalNeighbourhoodAttack(TestCase):
+    
+    dummy_data_description = DataDescription([
+    {"name": "a", "type": "countable", "representation": "integer"},
+    {"name": "b", "type": "countable", "representation": "integer"},
+    {"name": "sensitive", "type": "finite", "representation": ["X", "Y"]},
+])
+
+    dummy_data = pd.DataFrame([
+        (0, 1, "X"), (0, 2, "Y"), (3, 4, "Y"), (3, 5, "X")
+    ], columns=["a", "b", "sensitive"])
+
+
+    def setUp(self):
+        self.dataset = TabularDataset(dummy_data, dummy_data_description)
+        self.dataset.data = self.dummy_data
+
+    def _make_target(self, a, b, sensitive="X"):
+        return TabularDataset(
+            pd.DataFrame([(a, b, sensitive)], columns=["a", "b", "sensitive"]),
+            dummy_data_description
+        )
+
+    def _make_mia(self, a, b):
+        return TargetedMIA(
+            AuxiliaryDataKnowledge(self.dataset, auxiliary_split=0.5, num_training_records=2),
+            self._make_target(a, b),
+            BlackBoxKnowledge(Raw(), num_synthetic_records=None),
+        )
+
+    def _make_aia(self, a, b, sensitive="X"):
+        return TargetedAIA(
+            attacker_knowledge_data=AuxiliaryDataKnowledge(self.dataset, auxiliary_split=0.5, num_training_records=2),
+            attacker_knowledge_generator=BlackBoxKnowledge(Raw(), num_synthetic_records=None),
+            target_record=self._make_target(a, b, sensitive),
+            sensitive_attribute="sensitive",
+            attribute_values=["X", "Y"], 
+        )
+  
+    # --- MIA ---
+
+    def test_mia_training(self):
+        attack = LocalNeighbourhoodAttack(criterion=("threshold", 0.5))
+        attack.train(self._make_mia(0, 0), num_samples=100)
+        self.assertEqual(attack._threshold, 0.5)
+
+    def test_mia_attack_score(self):
+        attack = LocalNeighbourhoodAttack(radius=1, criterion=("threshold", 0.5))
+        attack.train(self._make_mia(0, 0), num_samples=100)
+        scores = attack.attack_score([self.dataset])
+        self.assertIsInstance(scores, np.ndarray)
+        self.assertEqual(len(scores), 1)
+
+    # --- AIA ---
+
+    def test_aia_training(self):
+        attack = LocalNeighbourhoodAttack(criterion=("threshold", 0.5))
+        attack.train(self._make_aia(0, 0), num_samples=100)
+        self.assertEqual(attack._threshold, 0.5)
+
+    def test_aia_attack_score(self):
+        attack = LocalNeighbourhoodAttack(radius=1, criterion=("threshold", 0.5))
+        attack.train(self._make_aia(0, 1), num_samples=100)
+        scores = attack.attack_score([self.dataset])
+        print(scores)
+        self.assertIsInstance(scores, np.ndarray)
+        self.assertEqual(scores.shape, (1,))
         
 ## Dummy data for AIA attacks. ------------------------------------------------------------------------
 dummy_data_aia_description = DataDescription([ 
@@ -482,7 +556,71 @@ class TestMLEnsembleAttack(TestCase):
         self.assertIsInstance(predicted_val, (float, np.float64))
         self.assertTrue(10000 <= predicted_val <= 60000, 
                     f"Predicted income {predicted_val} is outside expected range.")
-                         
+        
+
+
+### Test MIA attacks ------------------------------------------------------------------------------------------------ 
+
+class TestSynthMIAWrapper(TestCase):
+    """Test whether the SynthMIA Wrapper attack works for MIA."""
+     
+    def setUp(self):
+        """Create a wrapper with a mocked attacker for every test."""
+        self.mock_attacker = MagicMock(spec=BaseAttacker)
+        self.mock_attacker._compute_attack_scores.return_value = np.random.random(1)
+
+        patcher = patch("tapas.attacks.wrapper_synthmia_attacks.synth_mia")
+        self.mock_synth_mia = patcher.start()
+        self.mock_synth_mia.DCR = MagicMock(return_value=self.mock_attacker)
+        self.addCleanup(patcher.stop)
+
+    def _make_wrapper(self):
+        return SynthMiaTapasWrapper("DCR")
+        
+              
+    def test_training(self):
+        # Saves threat model and retrieves auxiliary data (when available) 
+        wrapper = self._make_wrapper()
+        TARGET_ARRAY = np.random.random((1, 2))
+        AUX_ARRAY = np.random.random((10, 2))
+
+        tm = MagicMock()
+        tm._target_records = MagicMock(spec=TabularDataset)
+        tm._target_records.as_numeric = TARGET_ARRAY
+        tm.atk_know_data.aux_data.as_numeric = AUX_ARRAY
+        wrapper.train(tm)
+        self.assertIs(wrapper.threat_model, tm)
+        np.testing.assert_array_equal(wrapper.ref_data, AUX_ARRAY)
+        
+    def test_attack_score(self):
+        wrapper = self._make_wrapper()
+        TARGET_ARRAY = np.random.random((1, 2))
+        AUX_ARRAY = np.random.random((10, 2))
+        tm = MagicMock()
+        tm._target_records = MagicMock(spec=TabularDataset)
+        tm._target_records.as_numeric = TARGET_ARRAY
+        tm.atk_know_data.aux_data.as_numeric = AUX_ARRAY
+        wrapper.train(tm)
+
+        SYNTH_DATASET = TabularDataset(
+        pd.DataFrame(np.random.random((20, 2)), columns=["a", "b"]),
+        DataDescription([
+            {"name": "a", "type": "real", "representation": "number"},
+            {"name": "b", "type": "real", "representation": "number"},
+        ])
+        )
+
+        scores = wrapper.attack_score([SYNTH_DATASET])
+        self.assertIsInstance(scores, np.ndarray)
+        
+        # One score per target record
+        self.assertEqual(len(scores), len(TARGET_ARRAY))
+
+        
+                
+    
+    
+    
         
 
 if __name__ == "__main__":

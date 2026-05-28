@@ -5,7 +5,7 @@ import os
 from unittest import TestCase
 
 import itertools
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 import numpy as np
 import pandas as pd
 import pytest
@@ -13,7 +13,7 @@ import pytest
 from tapas.datasets import TabularDataset, TabularRecord
 from tapas.datasets.data_description import DataDescription
 from tapas.generators.generator import NoBoxGenerator
-from tapas.report.attack_summary import AIAttackSummary, BinaryAIAttackSummary
+from tapas.report.attack_summary import AIAttackSummary, BinaryAIAttackSummary, MIAttackSummary
 from tapas.threat_models import (
     ThreatModel,
     TargetedMIA,
@@ -26,6 +26,7 @@ from tapas.threat_models import (
 from tapas.generators import Raw, Generator
 from tapas.threat_models.aia import NoBoxThreatModelAIA
 from tapas.threat_models.attacker_knowledge import AttackerKnowledgeOnData
+from tapas.threat_models.mia import NoBoxThreatModelMIA
 
 
 class RawConcurrent(Raw):
@@ -356,7 +357,10 @@ class TestMemory(TestCase):
     """Check whether saving/loading threat models works, as well as saving in memory."""
 
     def test_save_then_load(self):
-        name = os.path.join(os.path.dirname(__file__), "outputs/threat_model_test")
+        output_dir = os.path.join(os.path.dirname(__file__), "outputs")
+        name = os.path.join(output_dir, "threat_model_test")
+        os.makedirs(output_dir, exist_ok=True)
+        
         threat_model = TargetedMIA(
             knowledge_on_data,
             target_record,
@@ -558,4 +562,80 @@ class TestNoBoxThreatModelAIA(TestCase):
         )
         self.assertIsInstance(multi_report, AIAttackSummary)
         
+class TestNoBoxThreatModelMIA(TestCase):
+    """Test the membership-inference no box threat model."""
+
+    def setUp(self):
+        self.data_desc = DataDescription([
+            {"name": "age", "type": "countable", "description": "integer"},
+            {"name": "zip", "type": "countable", "description": "integer"},
+            {"name": "salary", "type": "countable", "description": "integer"},
+        ])
+
+        # Setup Training Records (3 records - mapped as 'members')
+        training_df = pd.DataFrame([
+            (25, 1001, 50),
+            (30, 1002, 60),
+            (35, 1003, 70)
+        ], columns=["age", "zip", "salary"])
+        self.training_dataset = TabularDataset(training_df, self.data_desc)
+        # Ensure underlying mock datasets can support mock sampling method
+        self.training_dataset.sample = MagicMock(return_value=self.training_dataset)
+
+        # Setup Control Records inside Attacker Knowledge (2 records - mapped as 'non-members')
+        control_df = pd.DataFrame([
+            (40, 1004, 80),
+            (45, 1005, 90)
+        ], columns=["age", "zip", "salary"])
+        self.control_dataset = TabularDataset(control_df, self.data_desc)
+        self.control_dataset.sample = MagicMock(return_value=self.control_dataset)
         
+        # Mock Attacker Knowledge on Data
+        self.atk_know_data = MagicMock(spec=AuxiliaryDataKnowledge)
+        self.atk_know_data.test_data = self.control_dataset
+        self.atk_know_data._get_data.return_value = [] # Avoid warning triggers during init
+
+        # Mock Attacker Knowledge on Generator
+        mock_gen = MagicMock(spec=NoBoxGenerator)
+        self.atk_know_gen = NoBoxKnowledge(mock_gen, None)
+        
+
+        # Initialize Threat Model under test
+        self.threat_model = NoBoxThreatModelMIA(
+            attacker_knowledge_data=self.atk_know_data,
+            attacker_knowledge_generator=self.atk_know_gen,
+            target_records=self.training_dataset,
+            target_data='all'
+        )
+
+    def test_initialization(self):
+        """Test if basic configuration properties are correctly assigned on init."""
+        self.assertEqual(self.threat_model.num_labels, 3)
+        self.assertEqual(self.threat_model.target_data, 'all')
+        self.assertEqual(self.threat_model.training_data, self.training_dataset)
+
+
+    def test_attack_flow(self):
+        """Test execution of threat evaluation, tracking model calling signatures."""
+        mock_attack = MagicMock()
+        mock_attack.label = "MockMIAttack"
+        mock_attack.attack.return_value = [1, 0, 1, 0, 0]
+        mock_attack.attack_score.return_value = [0.9, 0.1, 0.85, 0.3, 0.2]
+
+        synthetic_ds = MagicMock(spec=TabularDataset)
+        self.atk_know_gen.generate = MagicMock(return_value=synthetic_ds)
+
+        # Mock the internal builder to isolate testing to pipeline flow execution
+        mock_eval_dataset = MagicMock(spec=TabularDataset)
+        mock_labels = [[1], [1], [1], [0], [0]]
+        self.threat_model._build_ground_truth = MagicMock(return_value=(mock_eval_dataset, mock_labels))
+
+        report = self.threat_model.test(mock_attack, balance=False)
+
+        # Assert correct components passed downwards
+        self.atk_know_gen.generate.assert_called_once_with(None, training_mode=False)
+        mock_attack.attack.assert_called_once_with([synthetic_ds])
+        mock_attack.attack_score.assert_called_once_with([synthetic_ds])
+
+        # Assert wrapping object returns correctly typed report instance
+        self.assertIsInstance(report, MIAttackSummary)
