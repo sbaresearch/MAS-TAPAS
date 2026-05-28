@@ -19,7 +19,7 @@ data_knowledge = tapas.threat_models.AuxiliaryDataKnowledge(
     auxiliary_split=0.5,          # attacker knows half of the underlying distribution   
 )
 
-# Deine the generator as NoBox only access to synthetic dataset (not generator)
+# Define the generator as NoBox only access to synthetic dataset (not generator)
 generator = tapas.generators.NoBoxGenerator(synth_dataset)
 sdg_knowledge = tapas.threat_models.NoBoxKnowledge(
     generator=generator,  
