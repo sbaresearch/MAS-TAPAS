@@ -13,9 +13,8 @@ import os
 import pandas as pd
 from scipy.stats import binomtest
 import warnings
-
 from .attack_summary import AttackSummary, MIAttackSummary
-from .utils import metric_comparison_plots, plot_roc_curve, plot_asr_per_sensitive_attribute, DEFAULT_METRICS
+from .utils import metric_comparison_plots, plot_interactive_roc_curve, plot_roc_curve, plot_asr_per_sensitive_attribute, DEFAULT_METRICS
 
 class Report(ABC):
     """
@@ -153,7 +152,7 @@ class BinaryLabelAttackReport(Report):
 
         return None
 
-    def publish(self, filepath, include_one_marker_plots = True):
+    def publish(self, filepath, include_one_marker_plots = True, comparison_plots=True):
         """
         Make all comparison plots and save them to disk.
 
@@ -169,24 +168,27 @@ class BinaryLabelAttackReport(Report):
         None
 
         """
+        
+        if comparison_plots:
 
-        # compare generators and target ids for fixed dataset-atacks
-        self.compare("generator", ["dataset", "attack"], "target_id", filepath, include_one_marker_plots)
+            # compare generators and target ids for fixed dataset-atacks
+            self.compare("generator", ["dataset", "attack"], "target_id", filepath, include_one_marker_plots)
 
-        # compare attacks and target ids for fixed dataset-generators
-        self.compare("attack", ["dataset", "generator"], "target_id", filepath, include_one_marker_plots)
+            # compare attacks and target ids for fixed dataset-generators
+            self.compare("attack", ["dataset", "generator"], "target_id", filepath, include_one_marker_plots)
 
-        # compare datasets and target ids for fixed attacks-generators
-        self.compare("dataset", ["attack", "generator"], "target_id", filepath, include_one_marker_plots)
+            # compare datasets and target ids for fixed attacks-generators
+            self.compare("dataset", ["attack", "generator"], "target_id", filepath, include_one_marker_plots)
 
-        # compare targets and generators ids for fixed attacks-dataset
-        self.compare("target_id", ["dataset", "attack"], "generator", filepath, include_one_marker_plots)
+            # compare targets and generators ids for fixed attacks-dataset
+            self.compare("target_id", ["dataset", "attack"], "generator", filepath, include_one_marker_plots)
 
-        # compare targets and attacks ids for fixed dataset-generators
-        self.compare("target_id", ["dataset", "generator"], "attack", filepath, include_one_marker_plots)
+            # compare targets and attacks ids for fixed dataset-generators
+            self.compare("target_id", ["dataset", "generator"], "attack", filepath, include_one_marker_plots)
 
-        # compare attacks and generators for fixed dataset-targets.
-        self.compare("generator", ["dataset", "target_id"], "attack", filepath, include_one_marker_plots)
+            # compare attacks and generators for fixed dataset-targets.
+            self.compare("generator", ["dataset", "target_id"], "attack", filepath, include_one_marker_plots)    
+            
 
         print(f"All figures saved to directory {filepath}")
 
@@ -289,6 +291,7 @@ class ROCReport(Report):
         curve_label="attack",
         eff_epsilon=None,
         zooms=[1],
+        interactive=False,
     ):
         """
         Parameters
@@ -312,6 +315,8 @@ class ROCReport(Report):
             restricted to [0, zoom] x [0, zoom] (low corner) and [1-zoom, zoom] x
             [1-zoom, zoom] (high corner). This allows to visualise the TPR at low FPR 
             (and TNR at low FNR) for privacy analysis.
+        interactive: bool, default False
+            If True, generates polished Plotly dashboards exported as interactive HTML.
 
         """
         self.summaries = attack_summaries
@@ -320,6 +325,7 @@ class ROCReport(Report):
         self.curve_label = curve_label
         self.eff_epsilon = eff_epsilon
         self.zooms = zooms
+        self.interactive = interactive
 
     def publish(self, filepath):
         """
@@ -344,7 +350,7 @@ class ROCReport(Report):
             for zoom_in in self.zooms:
                 for low_corner in [True, False] if zoom_in < 1 else [True]:
                     # Decoration: have a nicely formatted file suffix and title.
-                    suffix = (
+                    current_suffix = (
                         self.suffix
                         + (
                             f"_zoom={zoom_in}_{'low' if low_corner else 'high'}"
@@ -353,25 +359,38 @@ class ROCReport(Report):
                         )
                         + g_suffix
                     )
-                    title = "Comparison of ROC curves"
-                    if suffix:
-                        tokens = suffix.split("_")
-                        if not tokens[0]:  # Remove the initial _.
-                            tokens = tokens[1:]
-                        title += "\n(" + (", ".join(tokens)) + ")"
-                    # Display the ROC curve for this setup.
-                    plot_roc_curve(
-                        [(s.labels, s.scores) for s in summaries],
-                        [
-                            getattr(s, self.curve_label) for s in summaries
-                        ],  # Legend labels.
-                        title,
-                        filepath,
-                        suffix,
-                        eff_epsilon=self.eff_epsilon,
-                        zoom_in=zoom_in,
-                        low_corner=low_corner,
-                    )
+                    if self.interactive:
+                        if low_corner:
+                            plot_interactive_roc_curve(
+                                summaries=summaries,
+                                curve_label=self.curve_label,
+                                eff_epsilon=self.eff_epsilon,
+                                zoom_in=zoom_in,
+                                low_corner=low_corner,
+                                output_path=filepath,
+                                current_suffix=current_suffix
+                            )
+                        
+                    else:
+                        title = "Comparison of ROC curves"
+                        if current_suffix:
+                            tokens = current_suffix.split("_")
+                            if not tokens[0]:  # Remove the initial _.
+                                tokens = tokens[1:]
+                            title += "\n(" + (", ".join(tokens)) + ")"
+                        # Display the ROC curve for this setup.
+                        plot_roc_curve(
+                            [(s.labels, s.scores) for s in summaries],
+                            [
+                                getattr(s, self.curve_label) for s in summaries
+                            ],  # Legend labels.
+                            title,
+                            filepath,
+                            current_suffix,
+                            eff_epsilon=self.eff_epsilon,
+                            zoom_in=zoom_in,
+                            low_corner=low_corner,
+                        )
 
 
 class EffectiveEpsilonReport(Report):

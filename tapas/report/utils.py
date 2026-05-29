@@ -2,7 +2,7 @@ import matplotlib.pyplot as plt
 import os
 import seaborn as sns
 import numpy as np
-
+import plotly.graph_objects as go
 from sklearn.metrics import roc_curve
 
 # List of all metrics that can be used in a report.
@@ -141,6 +141,163 @@ def metric_comparison_plots(
         plt.savefig(filename, bbox_inches='tight')
 
         plt.close(fig)
+        
+def plot_interactive_roc_curve(summaries, curve_label, eff_epsilon, zoom_in, low_corner, output_path, current_suffix):
+    """
+    Interactive Plotly Dashboard for ROC Curves.
+    Generates a HTML file with dynamic sliders and metadata.
+    
+    Parameters
+    ----------
+    summaries : list of BinaryLabelInferenceAttackSummary
+        A list containing the empirical membership inference attack outcomes. Each 
+        summary object must expose `.labels` (true membership binary arrays) and 
+        `.scores` (the calculated continuous probability predictions or metrics).
+    curve_label : str, default "attack"
+        The exact attribute string name to extract from each summary instance to serve 
+        as its trace label inside the right-hand legend column (e.g., "attack", "generator").
+    eff_epsilon : float, default 0.5
+        The initial analytical target value for Differential Privacy ($\epsilon$). Determines 
+        the starting gradient position of the dotted mathematical safety upper bound.
+    zoom_in : float, default 1.0
+        The structural view threshold fraction between 0.0 and 1.0. If less than 1.0, configures 
+        the initial plot canvas limits to a restricted sub-window slice.
+    low_corner : bool, default True
+        Specifies the clipping coordinate focus when zoom_in is less than 1.0. 
+        If True, locks the view window to the low corner $[0, \text{zoom\_in}]$. 
+        If False, locks the view window to the high corner $[1.0 - \text{zoom\_in}, 1.0]$.
+    output_path : str or None, default None
+        The targeted root directory where the dashboard should be saved. If a string path is 
+        supplied, the function dynamically forces directory creation and writes out an HTML file. 
+        If None, the file-writing sequence is bypassed.
+    current_suffix : str, default ""
+        The unique file naming suffix string appended to the exported file name 
+        (`ROC_curve{current_suffix}.html`) to prevent cross-center file overwrites.
+
+    Returns
+    -------
+    plotly.graph_objects.Figure
+        The standalone fully configured interactive layout canvas containing empirical attack 
+        traces, the theoretical privacy limit, crosshair coordinate trackers, an epsilon slider, 
+        and scale drop-downs.
+    """
+    
+    sample_summary = summaries[0]
+    labels_array = np.array(sample_summary.labels)
+    num_members = int(np.sum(labels_array == 1))
+    num_non_members = int(np.sum(labels_array == 0))
+
+    meta_text = f"Members: {num_members} | Non-Members: {num_non_members} "
+
+    # Plotly Layout 
+    fig = go.Figure()
+
+    # Extract and trace empirical steps
+    for s in summaries:
+        labels = np.array(s.labels)
+        scores = np.array(s.scores)
+        fpr, tpr, _ = roc_curve(labels, scores)
+        attack_name = getattr(s, curve_label).replace("SynthMIA_", "")
+        
+        fig.add_trace(go.Scatter(
+            x=fpr, y=tpr,
+            mode='lines+markers' if len(fpr) < 50 else 'lines',
+            name=f"Empirical Attack: {attack_name}",
+            line=dict(width=2.5),
+            hovertemplate="<b>" + attack_name + "</b><br>" +
+                          "FPR: %{x:.3f}<br>" +
+                          "TPR: %{y:.3f}<extra></extra>"
+        ))
+
+    # Baseline diagonal trace
+    fig.add_trace(go.Scatter(
+        x=[0, 1], y=[0, 1], mode='lines', name='Random Guess Baseline',
+        line=dict(color='black', width=1.5, dash='dash'), hoverinfo='skip'
+    ))
+
+    # Calculate initial DP mathematical boundary vector
+    fpr_domain = np.linspace(0, 1, 500)
+    init_upper_bound = np.minimum(1.0, np.exp(eff_epsilon) * fpr_domain)
+
+    fig.add_trace(go.Scatter(
+        x=fpr_domain, y=init_upper_bound, mode='lines', name='DP Safety Bound',
+        line=dict(color='rgba(200, 0, 0, 0.7)', width=2, dash='dot'), visible=True
+    ))
+
+    # 3. Create Interactive Epsilon Compliance Sliders
+    epsilon_range = [0.1, 0.2, 0.3, 0.5, 0.7, 1.0, 1.5, 2.0]
+    slider_steps = []
+    
+    # Include disaggregation subtitle headers if active
+    base_title_html = f"<b>ROC AUC Cucve</b>"
+    
+    for eps in epsilon_range:
+        updated_bound = np.minimum(1.0, np.exp(eps) * fpr_domain)
+        step = dict(
+            method="update", label=f"ε = {eps}",
+            args=[
+                {"y": [None]*len(summaries) + [[0, 1]] + [updated_bound]},
+                {"title": f"{base_title_html}<br><span style='font-size:13px; color:gray;'>{meta_text}  |  Effective Epsilon Target: {eps}</span>"}
+            ]
+        )
+        slider_steps.append(step)
+
+    # Create Graphical Window Zoom Menu
+    zoom_options = [
+        {"label": "Full Scale (100% View)", "range": [0, 1.0]},
+        {"label": "Moderate (40% View)", "range": [0, 0.4]},
+        {"label": "Strict Low (20% View)", "range": [0, 0.2]},
+        {"label": "Ultra Low (10% View)", "range": [0, 0.1]}
+    ]
+    
+   # Map the incoming zoom_in threshold directly to its corresponding list position
+    if zoom_in == 0.2:
+        default_dropdown_idx = 2  # Matches "Strict Low (20% View)"
+    elif zoom_in == 0.4:
+        default_dropdown_idx = 1  # Matches "Moderate (40% View)"
+    elif zoom_in == 0.1:
+        default_dropdown_idx = 3  # Matches "Ultra Low (10% View)"
+    else:
+        default_dropdown_idx = 0  # Fallback baseline for Full Scale (100% View)
+    
+    
+    dropdown_buttons = []
+    for opt in zoom_options:
+        dropdown_buttons.append(dict(
+            method="relayout", label=opt["label"],
+            args=[{"xaxis.range": opt["range"], "yaxis.range": opt["range"]}]
+        ))
+
+    # Handle current runtime loop window coordinate cuts
+    init_range = [0, zoom_in] if zoom_in < 1 else [0, 1.0]
+    if zoom_in < 1 and not low_corner:
+        init_range = [1.0 - zoom_in, 1.0]
+
+    # 5. Pack Complete Layout Matrix
+    fig.update_layout(
+        title=f"{base_title_html}<br><span style='font-size:13px; color:gray;'>{meta_text}  |  Effective Epsilon Target: {eff_epsilon}</span>",
+        xaxis_title="False Positive Rate (FPR - Error Threshold)",
+        yaxis_title="True Positive Rate (TPR - Vulnerable Members)",
+        xaxis=dict(range=init_range, gridcolor='rgba(230,230,230,0.8)', linecolor='black', linewidth=1.1, mirror=True, showspikes=True, spikethickness=1.5, spikedash="dot", spikemode="across", spikesnap="cursor"),
+        yaxis=dict(range=init_range, gridcolor='rgba(230,230,230,0.8)', linecolor='black', linewidth=1.1, mirror=True, showspikes=True, spikethickness=1.5, spikedash="dot", spikemode="across", spikesnap="cursor"),
+        plot_bgcolor='white', paper_bgcolor='white',
+        updatemenus=[dict(
+            buttons=dropdown_buttons, direction="down", pad={"r": 0, "t": 5, "b": 5, "l": 0}, active=default_dropdown_idx, showactive=True,
+            x=1.02, xanchor="left", y=1.1, yanchor="top"
+        )],
+        sliders=[dict(
+            active=epsilon_range.index(eff_epsilon) if eff_epsilon in epsilon_range else 3, 
+            currentvalue={"prefix": "Select Compliance Strictness: "}, pad={"t": 60}, steps=slider_steps
+        )],
+        legend=dict(yanchor="top", y=1.0, xanchor="left", x=1.02),
+        width=1150, height=750
+    )
+
+    # HTML file target to directory
+    if not os.path.exists(output_path):
+        os.makedirs(output_path)
+    out_path = os.path.join(output_path, f"ROC_curve{current_suffix}.html")
+    fig.write_html(out_path)
 
 
 def plot_roc_curve(
