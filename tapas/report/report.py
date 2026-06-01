@@ -357,9 +357,9 @@ class ROCReport(Report):
         self.curve_label = curve_label
         self.eff_epsilon = eff_epsilon
         self.zooms = zooms
-        self.interactive = interactive
+        
 
-    def publish(self, filepath):
+    def publish(self, filepath, interactive):
         """
         Plot the ROC curves and save them to disk.
 
@@ -391,7 +391,7 @@ class ROCReport(Report):
                         )
                         + g_suffix
                     )
-                    if self.interactive:
+                    if interactive:
                         if low_corner:
                             plot_interactive_roc_curve(
                                 summaries=summaries,
