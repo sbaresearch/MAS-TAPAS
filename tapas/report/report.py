@@ -152,9 +152,9 @@ class BinaryLabelAttackReport(Report):
 
         return None
 
-    def publish(self, filepath, include_one_marker_plots = True, comparison_plots=True):
+    def publish(self, filepath, include_one_marker_plots = True, all_comparison_plots=True, comparisons=None):
         """
-        Make all comparison plots and save them to disk.
+        Make all or defined comparison plots and save them to disk.
 
         Parameters
         ----------
@@ -162,14 +162,22 @@ class BinaryLabelAttackReport(Report):
             Path where the figure is to be saved.
         include_one_marker_plots: boolean
             Create also the plots where there is only one item in the legend.
-
+        all_comparison_plots: boolean 
+            Create all possible comparison plots.
+        comparisons : list[dict] or None
+        Required when all_comparison_plots=False. Each dict must contain:
+            - 'comparison_column'  : str
+            - 'fixed_pair_columns' : list[str] of length 2
+            - 'marker_column'      : str
+        All values must be one of: 'generator', 'dataset', 'attack', 'target_id'.
         Returns
         -------
         None
 
         """
+        VALID_COLUMNS = {"generator", "dataset", "attack", "target_id"}
         
-        if comparison_plots:
+        if all_comparison_plots:
 
             # compare generators and target ids for fixed dataset-atacks
             self.compare("generator", ["dataset", "attack"], "target_id", filepath, include_one_marker_plots)
@@ -189,6 +197,27 @@ class BinaryLabelAttackReport(Report):
             # compare attacks and generators for fixed dataset-targets.
             self.compare("generator", ["dataset", "target_id"], "attack", filepath, include_one_marker_plots)    
             
+        else:
+            if not comparisons:
+                raise ValueError("comparisons must be a non-empty list of dicts when all_comparison_plots=False.")
+
+            for i, c in enumerate(comparisons):
+                missing = {"comparison_column", "fixed_pair_columns", "marker_column"} - c.keys()
+                if missing:
+                    raise ValueError(f"comparisons[{i}] is missing keys: {missing}.")
+
+                for key in ("comparison_column", "marker_column"):
+                    if c[key] not in VALID_COLUMNS:
+                        raise ValueError(f"comparisons[{i}]['{key}'] = '{c[key]}' is not valid. Choose from {VALID_COLUMNS}.")
+
+                if len(c["fixed_pair_columns"]) != 2:
+                    raise ValueError(f"comparisons[{i}]['fixed_pair_columns'] must have exactly 2 entries, got {c['fixed_pair_columns']}.")
+
+                for col in c["fixed_pair_columns"]:
+                    if col not in VALID_COLUMNS:
+                        raise ValueError(f"comparisons[{i}]['fixed_pair_columns'] entry '{col}' is not valid. Choose from {VALID_COLUMNS}.")
+
+            self.compare(c["comparison_column"], c["fixed_pair_columns"], c["marker_column"], filepath, include_one_marker_plots)
 
         print(f"All figures saved to directory {filepath}")
 
