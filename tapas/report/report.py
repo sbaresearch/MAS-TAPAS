@@ -14,7 +14,7 @@ import pandas as pd
 from scipy.stats import binomtest
 import warnings
 from .attack_summary import AttackSummary, MIAttackSummary
-from .utils import metric_comparison_plots, plot_interactive_roc_curve, plot_roc_curve, plot_asr_per_sensitive_attribute, DEFAULT_METRICS
+from .utils import metric_comparison_plots, plot_asr_per_sensitive_attribute_plotly, plot_interactive_roc_curve, plot_roc_curve, plot_asr_per_sensitive_attribute, DEFAULT_METRICS
 
 class Report(ABC):
     """
@@ -269,9 +269,12 @@ class AIAAttackReport(MIAttackReport):
     Report for Attribute Disclosure Attack
     
     """
-    def publish(self, filepath):
+    def publish(self, filepath, interactive=False):
         
-        plot_asr_per_sensitive_attribute(data= self.attacks_data, output_path=filepath)
+        if interactive:
+            plot_asr_per_sensitive_attribute_plotly(data=self.attacks_data, output_path=filepath)
+        else:
+            plot_asr_per_sensitive_attribute(data= self.attacks_data, output_path=filepath)
         
 
 
