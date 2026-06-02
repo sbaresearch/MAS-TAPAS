@@ -371,7 +371,11 @@ def plot_interactive_roc_curve(summaries, curve_label, eff_epsilon, zoom_in, low
         if not os.path.exists(output_path):
             os.makedirs(output_path)
         out_path = os.path.join(output_path, f"ROC_curve{current_suffix}.html")
-        fig.write_html(out_path)
+        fig.write_html(
+            out_path,
+            full_html=False,          # just the <div> + <script>, no <html>/<body>
+            include_plotlyjs='cdn',   # one CDN <script> tag, not 3MB of inline JS
+            )
         
 
 
@@ -703,7 +707,11 @@ def plot_asr_per_sensitive_attribute_plotly(data, output_path):
             fig.update_yaxes(showline=True, linecolor='black', mirror=False)
 
             filename = f"attribute_disclosure_{attr}_nqis{qis_val}.html"
-            fig.write_html(os.path.join(output_path, filename))
+            fig.write_html(
+            os.path.join(output_path, filename),
+            full_html=False,          # just the <div> + <script>, no <html>/<body>
+            include_plotlyjs='cdn',   # one CDN <script> tag, not 3MB of inline JS
+            )
             print(f"Saved: {filename}")
 
 
