@@ -14,7 +14,7 @@ import pandas as pd
 from scipy.stats import binomtest
 import warnings
 from .attack_summary import AttackSummary, MIAttackSummary
-from .utils import metric_comparison_plots, plot_asr_per_sensitive_attribute_plotly, plot_interactive_roc_curve, plot_roc_curve, plot_asr_per_sensitive_attribute, DEFAULT_METRICS
+from .utils import metric_comparison_plots_plotly,metric_comparison_plots, plot_asr_per_sensitive_attribute_plotly, plot_interactive_roc_curve, plot_roc_curve, plot_asr_per_sensitive_attribute, DEFAULT_METRICS
 
 class Report(ABC):
     """
@@ -113,7 +113,7 @@ class BinaryLabelAttackReport(Report):
         self.attacks_data = summaries
         self.metrics = metrics or DEFAULT_METRICS
 
-    def compare(self, comparison_column, fixed_pair_columns, marker_column, filepath, include_one_marker_plots=True):
+    def compare(self, comparison_column, fixed_pair_columns, marker_column, filepath, include_one_marker_plots=True, interactive=False):
         """
         For a fixed pair of datasets-attacks-generators-target available in the data make a figure comparing
         performance between metrics. Options configure which dimension to compare against. Figures are saved to disk.
@@ -140,19 +140,31 @@ class BinaryLabelAttackReport(Report):
 
         """
 
-        metric_comparison_plots(
-            data=self.attacks_data,
-            comparison_label=comparison_column,
-            fixed_pair_label=fixed_pair_columns,
-            metrics=self.metrics,
-            marker_label=marker_column,
-            output_path=filepath,
-            include_one_marker_plots = include_one_marker_plots
-        )
+        if not interactive:
+            metric_comparison_plots(
+                data=self.attacks_data,
+                comparison_label=comparison_column,
+                fixed_pair_label=fixed_pair_columns,
+                metrics=self.metrics,
+                marker_label=marker_column,
+                output_path=filepath,
+                include_one_marker_plots = include_one_marker_plots
+            )
+        
+        else:
+            metric_comparison_plots_plotly(
+                data=self.attacks_data,
+                comparison_label=comparison_column,
+                fixed_pair_label=fixed_pair_columns,
+                metrics=self.metrics,
+                marker_label=marker_column,
+                output_path=filepath,
+                include_one_marker_plots = include_one_marker_plots
+            )
 
         return None
 
-    def publish(self, filepath, include_one_marker_plots = True, all_comparison_plots=True, comparisons=None):
+    def publish(self, filepath, include_one_marker_plots = True, all_comparison_plots=True, comparisons=None, interactive=False):
         """
         Make all or defined comparison plots and save them to disk.
 
@@ -170,6 +182,7 @@ class BinaryLabelAttackReport(Report):
             - 'fixed_pair_columns' : list[str] of length 2
             - 'marker_column'      : str
         All values must be one of: 'generator', 'dataset', 'attack', 'target_id'.
+        interactive: boolean (Returns html image or static image)
         Returns
         -------
         None
@@ -180,22 +193,22 @@ class BinaryLabelAttackReport(Report):
         if all_comparison_plots:
 
             # compare generators and target ids for fixed dataset-atacks
-            self.compare("generator", ["dataset", "attack"], "target_id", filepath, include_one_marker_plots)
+            self.compare("generator", ["dataset", "attack"], "target_id", filepath, include_one_marker_plots,interactive)
 
             # compare attacks and target ids for fixed dataset-generators
-            self.compare("attack", ["dataset", "generator"], "target_id", filepath, include_one_marker_plots)
+            self.compare("attack", ["dataset", "generator"], "target_id", filepath, include_one_marker_plots,interactive)
 
             # compare datasets and target ids for fixed attacks-generators
-            self.compare("dataset", ["attack", "generator"], "target_id", filepath, include_one_marker_plots)
+            self.compare("dataset", ["attack", "generator"], "target_id", filepath, include_one_marker_plots,interactive)
 
             # compare targets and generators ids for fixed attacks-dataset
-            self.compare("target_id", ["dataset", "attack"], "generator", filepath, include_one_marker_plots)
+            self.compare("target_id", ["dataset", "attack"], "generator", filepath, include_one_marker_plots,interactive)
 
             # compare targets and attacks ids for fixed dataset-generators
-            self.compare("target_id", ["dataset", "generator"], "attack", filepath, include_one_marker_plots)
+            self.compare("target_id", ["dataset", "generator"], "attack", filepath, include_one_marker_plots,interactive)
 
             # compare attacks and generators for fixed dataset-targets.
-            self.compare("generator", ["dataset", "target_id"], "attack", filepath, include_one_marker_plots)    
+            self.compare("generator", ["dataset", "target_id"], "attack", filepath, include_one_marker_plots, interactive)    
             
         else:
             if not comparisons:
@@ -217,7 +230,7 @@ class BinaryLabelAttackReport(Report):
                     if col not in VALID_COLUMNS:
                         raise ValueError(f"comparisons[{i}]['fixed_pair_columns'] entry '{col}' is not valid. Choose from {VALID_COLUMNS}.")
 
-            self.compare(c["comparison_column"], c["fixed_pair_columns"], c["marker_column"], filepath, include_one_marker_plots)
+            self.compare(c["comparison_column"], c["fixed_pair_columns"], c["marker_column"], filepath, include_one_marker_plots,interactive)
 
         print(f"All figures saved to directory {filepath}")
 

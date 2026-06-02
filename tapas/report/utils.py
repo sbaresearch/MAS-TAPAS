@@ -5,6 +5,8 @@ import numpy as np
 import plotly.graph_objects as go
 from sklearn.metrics import roc_curve
 import scipy.stats as stats
+from plotly.subplots import make_subplots
+
 
 # List of all metrics that can be used in a report.
 ALL_METRICS = [
@@ -35,6 +37,160 @@ axis_ranges = {
     "effective_epsilon": (0, 10),
 }
 color_pal = sns.color_palette("colorblind", 10)
+
+
+
+def metric_comparison_plots_plotly(
+    data, 
+    comparison_label: str, 
+    fixed_pair_label: list, 
+    metrics: list[str], 
+    marker_label: str, 
+    output_path: str,
+    include_one_marker_plots: bool = True
+):
+    """
+    Plots vertically stacked metric comparisons using Plotly, saving them as 
+    standalone HTML blocks ready for dynamic injection.
+    """
+    
+    metrics = list(set(data.columns).intersection(set(metrics)))
+    if not metrics:
+        return
+
+    
+    axis_ranges = {} 
+
+    for pair_name, pair in data.groupby(fixed_pair_label):
+        if len(pair) <= 1 and not include_one_marker_plots:
+            continue
+
+        
+        fig = make_subplots(
+            rows=len(metrics), 
+            cols=1, 
+            shared_xaxes=True,
+            vertical_spacing=0.05,
+            subplot_titles=[metric.replace("_", " ").title() for metric in metrics]
+        )
+
+        unique_x_values = sorted(pair[comparison_label].unique())
+        unique_markers = pair[marker_label].unique()
+
+        
+        legend_tracked = set()
+
+        
+        for row_idx, metric in enumerate(metrics, start=1):
+            for m_idx, marker_val in enumerate(unique_markers):
+                sub_data = pair[pair[marker_label] == marker_val]
+                
+                if sub_data.empty:
+                    continue
+
+                
+                x_vals = sub_data[comparison_label].tolist()
+                y_vals = sub_data[metric].tolist()
+
+                
+                y_err = []
+                for x in x_vals:
+                    points = sub_data[sub_data[comparison_label] == x][metric]
+                    if len(points) > 1:
+                        # 95% interval calculation via percentiles
+                        low, high = np.percentile(points, [2.5, 97.5])
+                        current_y = np.mean(points)
+                        y_err.append(max(high - current_y, current_y - low))
+                    else:
+                        y_err.append(0)
+
+                
+                show_legend = False
+                if marker_val not in legend_tracked:
+                    show_legend = True
+                    legend_tracked.add(marker_val)
+
+               
+                fig.add_trace(
+                    go.Scatter(
+                        x=x_vals,
+                        y=y_vals,
+                        mode='markers',
+                        name=str(marker_val),
+                        showlegend=show_legend,
+                        legendgroup=str(marker_val),
+                        marker=dict(size=10),
+                        error_y=dict(
+                            type='data',
+                            array=y_err,
+                            visible=True,
+                            thickness=2,
+                            width=4
+                        )
+                    ),
+                    row=row_idx, 
+                    col=1
+                )
+
+            
+            if metric in axis_ranges:
+                fig.update_yaxes(range=axis_ranges[metric], row=row_idx, col=1)
+
+        # 3. Apply the flexible, wide-screen defensive layout parameters
+        title_text = (
+            f"Comparison of {comparison_label}s and different targets<br>"
+            f"<sub>{fixed_pair_label[0]}: {pair_name[0]}, {fixed_pair_label[1]}: {pair_name[1]}</sub>"
+        )
+
+        fig.update_layout(
+            title=dict(
+                text=title_text,
+                font=dict(size=18, weight="bold"),
+                x=0.5,
+                xanchor="center"
+            ),
+            legend=dict(
+                title=dict(text=marker_label.replace("_", " ").title()),
+                orientation="v",             
+                yanchor="top",
+                y=1.0,                       
+                xanchor="left",
+                x=1.02,                      
+                bgcolor="rgba(255,255,255,0.8)" 
+            ),
+            margin=dict(l=60, r=40, t=100, b=120), 
+            plot_bgcolor="white",
+            paper_bgcolor="white",
+            width=None,   # Fluid width configuration
+            height=None   # Fluid height configuration
+        )
+
+        # Apply axis structural lines
+        fig.update_xaxes(showline=True, linecolor="black", gridcolor="#EEEEEE")
+        fig.update_yaxes(showline=True, linecolor="black", gridcolor="#EEEEEE")
+        fig.update_xaxes(title_text=f"{comparison_label}s".capitalize(), row=len(metrics), col=1)
+
+        # 4. Generate the proper descriptive file names matching your logic
+        pair_str0 = str(pair_name[0]).replace("/", "_").replace("\\", "_")
+        pair_str1 = str(pair_name[1]).replace("/", "_").replace("\\", "_")
+        
+        filename = f"{comparison_label}sComparison_Dataset{pair_str0}_Attack{pair_str1}.html"
+        
+        if fixed_pair_label[0] == 'target_id':
+            filename = f"{comparison_label}sComparison_DatasetTarget_Ids_Attack{pair_str1}.html"
+        if fixed_pair_label[1] == 'target_id':
+            filename = f"{comparison_label}sComparison_DatasetTarget_Ids_AttackTargetIds.html"
+
+        full_output_path = os.path.join(output_path, filename)
+        os.makedirs(os.path.dirname(full_output_path), exist_ok=True)
+
+        
+        fig.write_html(
+            full_output_path,
+            full_html=False,
+            include_plotlyjs='cdn',
+            config={'responsive': True}
+        )
 
 
 def metric_comparison_plots(
@@ -364,7 +520,8 @@ def plot_interactive_roc_curve(summaries, curve_label, eff_epsilon, zoom_in, low
             currentvalue={"prefix": "Select Effective Epsilon: "}, pad={"t": 60}, steps=slider_steps
         )],
         legend=dict(yanchor="top", y=1.0, xanchor="left", x=1.02),
-        width=1150, height=750
+        width=None, height=None,
+        
     )
 
     if output_path is not None:
@@ -374,7 +531,8 @@ def plot_interactive_roc_curve(summaries, curve_label, eff_epsilon, zoom_in, low
         fig.write_html(
             out_path,
             full_html=False,          # just the <div> + <script>, no <html>/<body>
-            include_plotlyjs='cdn',   # one CDN <script> tag, not 3MB of inline JS
+            include_plotlyjs='cdn',
+            config={'responsive': True}# one CDN <script> tag, not 3MB of inline JS
             )
         
 
@@ -697,8 +855,8 @@ def plot_asr_per_sensitive_attribute_plotly(data, output_path):
                 ),
                 plot_bgcolor='white',
                 paper_bgcolor='white',
-                width=1100,
-                height=600,
+                width=None,
+                height=None,
                 margin=dict(l=60, r=40, t=100, b=60),
             )
 
@@ -709,8 +867,9 @@ def plot_asr_per_sensitive_attribute_plotly(data, output_path):
             filename = f"attribute_disclosure_{attr}_nqis{qis_val}.html"
             fig.write_html(
             os.path.join(output_path, filename),
-            full_html=False,          # just the <div> + <script>, no <html>/<body>
-            include_plotlyjs='cdn',   # one CDN <script> tag, not 3MB of inline JS
+            full_html=False,          
+            include_plotlyjs='cdn',  
+            config={'responsive': True}
             )
             print(f"Saved: {filename}")
 
