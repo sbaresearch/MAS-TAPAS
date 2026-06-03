@@ -5,7 +5,7 @@ description = ""
 authors = ["Florimond Houussiau <fhoussiau@turing.ac.uk>", "James Jordon", "Callum Mole <cmole@turing.ac.uk>", "Camila Rangel-Smith <crangelsmith@turing.ac.uk>", "James Geddes <jgeddes@turing.ac.uk>"]
 
 [tool.poetry.dependencies]
-python = ">=3.9, <3.12"
+python = ">=3.10, <3.12"
 matplotlib = ">=3.4.3"
 palettable = "^3.3.0"
 seaborn = "^0.12.1"
@@ -23,6 +23,7 @@ mlflow = "3.1.1"
 torch = ">=1.8.0"
 geomloss = "0.2.6"
 xgboost = "^3.2.0"
+plotly = "^5.0.0"
 
 [tool.poetry.dev-dependencies]
 spyder-kernels = "^2.1.0"
