@@ -45,22 +45,22 @@ class SynthMiaTapasWrapper(Attack):
 
     def attack_score(self, datasets: list[Dataset]) -> np.ndarray:
         """
-        TAPAS calls this with the synthetic dataset(s).
+        TAPAS calls this with one or more synthetic datasets (releases).
+        When multiple releases are provided, scores are averaged across them,
+        which reduces noise and produces a stronger membership signal.
         """
-        # Extract the synthetic data as a numpy array
-        synth_data = datasets[0].as_numeric
-        
-        # Get the targets from the threat model context.
         X_test_clean = self.threat_model._target_records.as_numeric
 
-        # Call Synth-MIA's engine directly
-        scores = self.attacker._compute_attack_scores(
-            X_test=X_test_clean,
-            synth=synth_data,
-            ref=self.ref_data
-        )
-        
-        return scores
+        all_scores = []
+        for ds in datasets:
+            scores = self.attacker._compute_attack_scores(
+                X_test=X_test_clean,
+                synth=ds.as_numeric,
+                ref=self.ref_data
+            )
+            all_scores.append(scores)
+
+        return np.mean(all_scores, axis=0)
 
     def attack(self, datasets: list[Dataset]) -> np.ndarray:
         """Binary decision based on scores."""

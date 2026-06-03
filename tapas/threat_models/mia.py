@@ -400,8 +400,8 @@ class NoBoxThreatModelMIA(ThreatModel):
         Evaluate an Attack object against this threat model.
         """
         
-        # Get the synthetic datasets.
-        synthetic_datasets = [self.atk_know_gen.generate(None, training_mode=False)]
+        # Get the synthetic datasets (list of one or more releases).
+        synthetic_datasets = self.atk_know_gen.generate(None, training_mode=False)
         
         self._target_records, self.true_labels = self._build_ground_truth(balance=balance)
         

@@ -308,8 +308,8 @@ class NoBoxThreatModelAIA(ThreatModel):
         return truths, preds, scores
     
     def test(self, attack: Attack):
-        # Generate synthetic data 
-        raw_synthetic_datasets = [self.atk_know_gen.generate(None, training_mode=False)]
+        # Generate synthetic data (list of one or more releases).
+        raw_synthetic_datasets = self.atk_know_gen.generate(None, training_mode=False)
         synthetic_datasets = [ds.view(columns=self.relevant_cols) for ds in raw_synthetic_datasets]
         
         # Run attack on training data

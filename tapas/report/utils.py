@@ -511,6 +511,15 @@ def plot_interactive_roc_curve(summaries, curve_label, eff_epsilon, zoom_in, low
         xaxis=dict(range=init_range, gridcolor='rgba(230,230,230,0.8)', linecolor='black', linewidth=1.1, mirror=True, showspikes=True, spikethickness=1.5, spikedash="dot", spikemode="across", spikesnap="cursor"),
         yaxis=dict(range=init_range, gridcolor='rgba(230,230,230,0.8)', linecolor='black', linewidth=1.1, mirror=True, showspikes=True, spikethickness=1.5, spikedash="dot", spikemode="across", spikesnap="cursor"),
         plot_bgcolor='white', paper_bgcolor='white',
+        annotations=[dict(
+            text="FPR Zoom Options",
+            x=1.02, xref="paper",
+            y=1.08, yref="paper",
+            showarrow=False,
+            xanchor="left",
+            yanchor="bottom",
+            font=dict(size=12)
+        )],
         updatemenus=[dict(
             buttons=dropdown_buttons, direction="down", pad={"r": 0, "t": 5, "b": 5, "l": 0}, active=default_dropdown_idx, showactive=True,
             x=1.02, xanchor="left", y=1.1, yanchor="top"

@@ -623,7 +623,7 @@ class TestNoBoxThreatModelMIA(TestCase):
         mock_attack.attack_score.return_value = [0.9, 0.1, 0.85, 0.3, 0.2]
 
         synthetic_ds = MagicMock(spec=TabularDataset)
-        self.atk_know_gen.generate = MagicMock(return_value=synthetic_ds)
+        self.atk_know_gen.generate = MagicMock(return_value=[synthetic_ds])
 
         # Mock the internal builder to isolate testing to pipeline flow execution
         mock_eval_dataset = MagicMock(spec=TabularDataset)
