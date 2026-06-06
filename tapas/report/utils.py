@@ -2,8 +2,11 @@ import matplotlib.pyplot as plt
 import os
 import seaborn as sns
 import numpy as np
-
+import plotly.graph_objects as go
 from sklearn.metrics import roc_curve
+import scipy.stats as stats
+from plotly.subplots import make_subplots
+
 
 # List of all metrics that can be used in a report.
 ALL_METRICS = [
@@ -34,6 +37,160 @@ axis_ranges = {
     "effective_epsilon": (0, 10),
 }
 color_pal = sns.color_palette("colorblind", 10)
+
+
+
+def metric_comparison_plots_plotly(
+    data, 
+    comparison_label: str, 
+    fixed_pair_label: list, 
+    metrics: list[str], 
+    marker_label: str, 
+    output_path: str,
+    include_one_marker_plots: bool = True
+):
+    """
+    Plots vertically stacked metric comparisons using Plotly, saving them as 
+    standalone HTML blocks ready for dynamic injection.
+    """
+    
+    metrics = list(set(data.columns).intersection(set(metrics)))
+    if not metrics:
+        return
+
+    
+    axis_ranges = {} 
+
+    for pair_name, pair in data.groupby(fixed_pair_label):
+        if len(pair) <= 1 and not include_one_marker_plots:
+            continue
+
+        
+        fig = make_subplots(
+            rows=len(metrics), 
+            cols=1, 
+            shared_xaxes=True,
+            vertical_spacing=0.05,
+            subplot_titles=[metric.replace("_", " ").title() for metric in metrics]
+        )
+
+        unique_x_values = sorted(pair[comparison_label].unique())
+        unique_markers = pair[marker_label].unique()
+
+        
+        legend_tracked = set()
+
+        
+        for row_idx, metric in enumerate(metrics, start=1):
+            for m_idx, marker_val in enumerate(unique_markers):
+                sub_data = pair[pair[marker_label] == marker_val]
+                
+                if sub_data.empty:
+                    continue
+
+                
+                x_vals = sub_data[comparison_label].tolist()
+                y_vals = sub_data[metric].tolist()
+
+                
+                y_err = []
+                for x in x_vals:
+                    points = sub_data[sub_data[comparison_label] == x][metric]
+                    if len(points) > 1:
+                        # 95% interval calculation via percentiles
+                        low, high = np.percentile(points, [2.5, 97.5])
+                        current_y = np.mean(points)
+                        y_err.append(max(high - current_y, current_y - low))
+                    else:
+                        y_err.append(0)
+
+                
+                show_legend = False
+                if marker_val not in legend_tracked:
+                    show_legend = True
+                    legend_tracked.add(marker_val)
+
+               
+                fig.add_trace(
+                    go.Scatter(
+                        x=x_vals,
+                        y=y_vals,
+                        mode='markers',
+                        name=str(marker_val),
+                        showlegend=show_legend,
+                        legendgroup=str(marker_val),
+                        marker=dict(size=10),
+                        error_y=dict(
+                            type='data',
+                            array=y_err,
+                            visible=True,
+                            thickness=2,
+                            width=4
+                        )
+                    ),
+                    row=row_idx, 
+                    col=1
+                )
+
+            
+            if metric in axis_ranges:
+                fig.update_yaxes(range=axis_ranges[metric], row=row_idx, col=1)
+
+        # 3. Apply the flexible, wide-screen defensive layout parameters
+        title_text = (
+            f"Comparison of {comparison_label}s and different targets<br>"
+            f"<sub>{fixed_pair_label[0]}: {pair_name[0]}, {fixed_pair_label[1]}: {pair_name[1]}</sub>"
+        )
+
+        fig.update_layout(
+            title=dict(
+                text=title_text,
+                font=dict(size=18, weight="bold"),
+                x=0.5,
+                xanchor="center"
+            ),
+            legend=dict(
+                title=dict(text=marker_label.replace("_", " ").title()),
+                orientation="v",             
+                yanchor="top",
+                y=1.0,                       
+                xanchor="left",
+                x=1.02,                      
+                bgcolor="rgba(255,255,255,0.8)" 
+            ),
+            margin=dict(l=60, r=40, t=100, b=120), 
+            plot_bgcolor="white",
+            paper_bgcolor="white",
+            width=None,   # Fluid width configuration
+            height=None   # Fluid height configuration
+        )
+
+        # Apply axis structural lines
+        fig.update_xaxes(showline=True, linecolor="black", gridcolor="#EEEEEE")
+        fig.update_yaxes(showline=True, linecolor="black", gridcolor="#EEEEEE")
+        fig.update_xaxes(title_text=f"{comparison_label}s".capitalize(), row=len(metrics), col=1)
+
+        # 4. Generate the proper descriptive file names matching your logic
+        pair_str0 = str(pair_name[0]).replace("/", "_").replace("\\", "_")
+        pair_str1 = str(pair_name[1]).replace("/", "_").replace("\\", "_")
+        
+        filename = f"{comparison_label}sComparison_Dataset{pair_str0}_Attack{pair_str1}.html"
+        
+        if fixed_pair_label[0] == 'target_id':
+            filename = f"{comparison_label}sComparison_DatasetTarget_Ids_Attack{pair_str1}.html"
+        if fixed_pair_label[1] == 'target_id':
+            filename = f"{comparison_label}sComparison_DatasetTarget_Ids_AttackTargetIds.html"
+
+        full_output_path = os.path.join(output_path, filename)
+        os.makedirs(os.path.dirname(full_output_path), exist_ok=True)
+
+        
+        fig.write_html(
+            full_output_path,
+            full_html=False,
+            include_plotlyjs='cdn',
+            config={'responsive': True}
+        )
 
 
 def metric_comparison_plots(
@@ -141,6 +298,253 @@ def metric_comparison_plots(
         plt.savefig(filename, bbox_inches='tight')
 
         plt.close(fig)
+        
+
+def plot_interactive_roc_curve(summaries, curve_label, eff_epsilon, zoom_in, low_corner, output_path, current_suffix):
+    """
+    Interactive Plotly Dashboard for ROC Curves.
+    Generates a HTML file with dynamic sliders and metadata.
+    
+    Parameters
+    ----------
+    summaries : list of BinaryLabelInferenceAttackSummary
+        A list containing the empirical membership inference attack outcomes. Each 
+        summary object must expose `.labels` (true membership binary arrays) and 
+        `.scores` (the calculated continuous probability predictions or metrics).
+    curve_label : str, default "attack"
+        The exact attribute string name to extract from each summary instance to serve 
+        as its trace label inside the right-hand legend column (e.g., "attack", "generator").
+    eff_epsilon : float, default 0.5
+        The initial analytical target value for Differential Privacy ($\epsilon$). Determines 
+        the starting gradient position of the dotted mathematical safety upper bound.
+    zoom_in : float, default 1.0
+        The structural view threshold fraction between 0.0 and 1.0. If less than 1.0, configures 
+        the initial plot canvas limits to a restricted sub-window slice.
+    low_corner : bool, default True
+        Specifies the clipping coordinate focus when zoom_in is less than 1.0. 
+        If True, locks the view window to the low corner $[0, \text{zoom\_in}]$. 
+        If False, locks the view window to the high corner $[1.0 - \text{zoom\_in}, 1.0]$.
+    output_path : str or None, default None
+        The targeted root directory where the dashboard should be saved. If a string path is 
+        supplied, the function dynamically forces directory creation and writes out an HTML file. 
+        If None, the file-writing sequence is bypassed.
+    current_suffix : str, default ""
+        The unique file naming suffix string appended to the exported file name 
+        (`ROC_curve{current_suffix}.html`) to prevent cross-center file overwrites.
+
+    Returns
+    -------
+    plotly.graph_objects.Figure
+        The standalone fully configured interactive layout canvas containing empirical attack 
+        traces, the theoretical privacy limit, crosshair coordinate trackers, an epsilon slider, 
+        and scale drop-downs.
+    """
+    
+    sample_summary = summaries[0]
+    labels_array = np.array(sample_summary.labels).ravel()
+    num_members = int(np.sum(labels_array == 1))
+    num_non_members = int(np.sum(labels_array == 0))
+    meta_text = f"Members: {num_members} | Non-Members: {num_non_members} "
+    base_title_html = f"<b>ROC AUC Curve</b>"
+    
+    fig = go.Figure()
+
+    FPR_GRID = np.linspace(0, 1, 300)
+    alpha = 0.05  # Enforces 95% Clopper-Pearson interval coverage boundaries
+
+    
+    cached_curves = []
+
+    
+    for s in summaries:
+        labels = np.array(s.labels).ravel()
+        scores = np.array(s.scores).ravel()
+        
+        attack_name = getattr(s, curve_label).replace("SynthMIA_", "")
+
+        if np.max(labels) > 1.0 or np.max(scores) > 1.0:
+            scores = scores / 100.0
+
+        member_scores = scores[labels == 1]
+        non_member_scores = scores[labels == 0]
+        n_members = len(member_scores)
+
+        fpr, tpr, _ = roc_curve(labels, scores)
+        
+        mean_tpr = np.interp(FPR_GRID, fpr, tpr)
+        mean_tpr[0] = 0.0
+        mean_tpr[-1] = 1.0
+
+        tpr_lower = []
+        tpr_upper = []
+
+        for f_target in FPR_GRID:
+            if f_target <= 0.0:
+                tpr_lower.append(0.0)
+                tpr_upper.append(0.0)
+                continue
+            if f_target >= 1.0:
+                tpr_lower.append(1.0)
+                tpr_upper.append(1.0)
+                continue
+
+            thresh = np.percentile(non_member_scores, (1.0 - f_target) * 100.0)
+            true_positives = np.sum(member_scores >= thresh)
+            k = true_positives
+
+            low_val = 0.0 if k == 0 else stats.beta.ppf(alpha / 2, k, n_members - k + 1)
+            high_val = 1.0 if k == n_members else stats.beta.ppf(1 - alpha / 2, k + 1, n_members - k)
+
+            tpr_lower.append(low_val)
+            tpr_upper.append(high_val)
+
+        tpr_lower = np.array(tpr_lower)
+        tpr_upper = np.array(tpr_upper)
+
+        cached_curves.append({
+            'upper': tpr_upper,
+            'lower': tpr_lower,
+            'mean': mean_tpr
+        })
+
+        
+        fig.add_trace(go.Scatter(
+            x=FPR_GRID, y=tpr_upper,
+            mode='lines', line=dict(width=0),
+            showlegend=False, hoverinfo='skip'
+        ))
+
+       
+        fig.add_trace(go.Scatter(
+            x=FPR_GRID, y=tpr_lower,
+            mode='lines', line=dict(width=0),
+            fill='tonexty', 
+            fillcolor='rgba(0, 128, 255, 0.08)',
+            name=f"95% CP Exact Bound ({attack_name})", 
+            hoverinfo='skip'
+        ))
+
+        
+        fig.add_trace(go.Scatter(
+            x=FPR_GRID, y=mean_tpr,
+            mode='lines',
+            name=f"Empirical Attack: {attack_name}",
+            line=dict(width=2.5),
+            hovertemplate="<b>" + attack_name + "</b><br>FPR: %{x:.3f}<br>TPR: %{y:.3f}<extra></extra>"
+        ))
+
+    # Random Guess Baseline 
+    fig.add_trace(go.Scatter(
+        x=FPR_GRID, y=FPR_GRID, mode='lines', name='Random Guess Baseline',
+        line=dict(color='black', width=1.5, dash='dash'), hoverinfo='skip'
+    ))
+
+    # Effective Epsilon Safety Bound
+    init_upper_bound = np.minimum(1.0, np.exp(eff_epsilon) * FPR_GRID)
+    fig.add_trace(go.Scatter(
+        x=FPR_GRID, y=init_upper_bound, mode='lines', name='DP Safety Bound',
+        line=dict(color='rgba(200, 0, 0, 0.7)', width=2, dash='dot'), visible=True
+    ))
+
+    
+    init_range = [0, zoom_in] if zoom_in < 1 else [0, 1.0]
+    if zoom_in < 1 and not low_corner:
+        init_range = [1.0 - zoom_in, 1.0]
+
+    zoom_options = [
+        {"label": "Full Scale (100% View)", "range": [0, 1.0]},
+        {"label": "Moderate (40% View)", "range": [0, 0.4]},
+        {"label": "Strict Low (20% View)", "range": [0, 0.2]},
+        {"label": "Ultra Low (10% View)", "range": [0, 0.1]}
+    ]
+    
+    if zoom_in == 0.2:
+        default_dropdown_idx = 2
+    elif zoom_in == 0.4:
+        default_dropdown_idx = 1
+    elif zoom_in == 0.1:
+        default_dropdown_idx = 3
+    else:
+        default_dropdown_idx = 0
+
+    dropdown_buttons = []
+    for opt in zoom_options:
+        dropdown_buttons.append(dict(
+            method="relayout", label=opt["label"],
+            args=[{"xaxis.range": opt["range"], "yaxis.range": opt["range"]}]
+        ))
+
+    
+    epsilon_range = [0.1, 0.2, 0.3, 0.5, 0.7, 1.0, 1.5, 2.0]
+    slider_steps = []
+
+    for eps in epsilon_range:
+        updated_bound = np.minimum(1.0, np.exp(eps) * FPR_GRID)
+        
+        
+        y_updates = []
+        for curve in cached_curves:
+            y_updates.append(curve['upper'])  
+            y_updates.append(curve['lower'])  
+            y_updates.append(curve['mean'])   
+            
+        y_updates.append(FPR_GRID)       # Random Baseline
+        y_updates.append(updated_bound)   # DP Safety Bound
+        
+        step = dict(
+            method="update", 
+            label=f"ε = {eps}",
+            args=[
+                {"y": y_updates},
+                {
+                    "title": f"{base_title_html}<br><span style='font-size:13px; color:gray;'>{meta_text}  |  Effective Epsilon Target: {eps}</span>"
+                }
+            ]
+        )
+        slider_steps.append(step)
+
+    
+    fig.update_layout(
+        title=f"{base_title_html}<br><span style='font-size:13px; color:gray;'>{meta_text}  |  Effective Epsilon Target: {eff_epsilon}</span>",
+        xaxis_title="False Positive Rate (FPR - Error Threshold)",
+        yaxis_title="True Positive Rate (TPR - Vulnerable Members)",
+        xaxis=dict(range=init_range, gridcolor='rgba(230,230,230,0.8)', linecolor='black', linewidth=1.1, mirror=True, showspikes=True, spikethickness=1.5, spikedash="dot", spikemode="across", spikesnap="cursor"),
+        yaxis=dict(range=init_range, gridcolor='rgba(230,230,230,0.8)', linecolor='black', linewidth=1.1, mirror=True, showspikes=True, spikethickness=1.5, spikedash="dot", spikemode="across", spikesnap="cursor"),
+        plot_bgcolor='white', paper_bgcolor='white',
+        annotations=[dict(
+            text="FPR Zoom Options",
+            x=1.02, xref="paper",
+            y=1.08, yref="paper",
+            showarrow=False,
+            xanchor="left",
+            yanchor="bottom",
+            font=dict(size=12)
+        )],
+        updatemenus=[dict(
+            buttons=dropdown_buttons, direction="down", pad={"r": 0, "t": 5, "b": 5, "l": 0}, active=default_dropdown_idx, showactive=True,
+            x=1.02, xanchor="left", y=1.1, yanchor="top"
+        )],
+        sliders=[dict(
+            active=epsilon_range.index(eff_epsilon) if eff_epsilon in epsilon_range else 3, 
+            currentvalue={"prefix": "Select Effective Epsilon: "}, pad={"t": 60}, steps=slider_steps
+        )],
+        legend=dict(yanchor="top", y=1.0, xanchor="left", x=1.02),
+        width=None, height=None,
+        
+    )
+
+    if output_path is not None:
+        if not os.path.exists(output_path):
+            os.makedirs(output_path)
+        out_path = os.path.join(output_path, f"ROC_curve{current_suffix}.html")
+        fig.write_html(
+            out_path,
+            full_html=False,          # just the <div> + <script>, no <html>/<body>
+            include_plotlyjs='cdn',
+            config={'responsive': True}# one CDN <script> tag, not 3MB of inline JS
+            )
+        
+
 
 
 def plot_roc_curve(
@@ -219,6 +623,264 @@ def plot_roc_curve(
     plt.savefig(os.path.join(output_path, filename))
 
     plt.close(fig)
+    
+def plot_asr_per_sensitive_attribute(data,output_path):
+    """Plot AIA related figures
+
+    Parameters
+    ----------
+    data: dataframe
+        Input dataframe from the MIAttackReport class
+    output_path: str
+        Path where the figure is to be saved.
+    
+    """
+    set_style()
+        
+    df = data.copy(deep=True)    
+    
+    df['n_qis'] = df['quasi_identifiers'].apply(lambda x: len(x))
+
+    has_accuracy = 'accuracy' in df.columns and df['accuracy'].notna().any()
+
+    n_qis_levels = sorted(df['n_qis'].unique())
+
+    if not os.path.exists(output_path):
+        os.makedirs(output_path)
+
+    for qis_val in n_qis_levels:
+        qis_df = df[df['n_qis'] == qis_val].copy()
+        sensitive_attributes = qis_df['sensitive_attribute'].unique()
+        n_rows = len(sensitive_attributes)
+
+        for i, attr in enumerate(sensitive_attributes):
+            fig, ax1 = plt.subplots(figsize=(14, 8))
+            attr_df = qis_df[qis_df['sensitive_attribute'] == attr].copy()
+            if not has_accuracy:
+                print("Error: No accuracy df found for sensitive attribute or does not applies.")
+            else:
+                attr_df['attack_label'] = attr_df['attack'].apply(lambda x: str(x).split('(')[0])
+                
+                ax1.set_axisbelow(True) 
+                ax1.yaxis.grid(True, linestyle='--', color='#DDDDDD', alpha=0.5, zorder=0)
+                
+                # Filter by worst case attack depending on number of qis  attributes
+                attr_df = attr_df.reset_index()
+                idx = attr_df.groupby('attack_label')['accuracy'].idxmax()
+                result = attr_df.loc[idx]
+                
+                x = np.arange(len(result))
+                width = 0.3
+
+                if 'accuracy_control' in result:
+                    # two bars → symmetric layout
+                    b1 = ax1.bar(x - width/2, result['accuracy'], width,
+                                label='Member Success', color='#56B4E9', zorder=3)
+
+                    b2 = ax1.bar(x + width/2, result['accuracy_control'], width,
+                                label='Non Member Success', color='#E69F00', zorder=3)
+
+                else:
+                    # one bar → centered
+                    b1 = ax1.bar(x, result['accuracy'], width,
+                                label='Member Success', color='#56B4E9', zorder=3)
+                
+                
+                ax1.bar_label(b1, labels=[f'{v.get_height()*100:.0f}%' for v in b1], padding=3, fontsize=12, zorder=5)
+                if 'accuracy_control' in result.columns: 
+                    ax1.bar_label(b2, labels=[f'{v.get_height()*100:.0f}%' for v in b2], padding=3, fontsize=12, zorder=5)
+                
+                ax1.set_xticks(x)
+                ax1.set_xticklabels(result['attack_label'])
+
+                # --- Formatting ---
+                ax1.set_title(f"KNOWN ATTRIBUTES COUNT: {qis_val} | SENSITIVE ATTRIBUTE: {attr.upper()}", 
+                            loc='left', fontsize=12, fontweight='bold', pad=20)
+                
+                ax1.set_ylabel("Attack Success Rate (%)", fontweight='bold')
+                ax1.set_xlabel("Attack Name", fontweight='bold')
+                                
+                for ax in [ax1]:
+                    ax.set_ylim(0, 1.1)
+                    ax.yaxis.set_major_formatter(plt.FuncFormatter(lambda val, _: f'{val:.0%}'))
+                    # Hide top/side spines for a cleaner look
+                    ax.spines['top'].set_visible(False)
+                
+                ax1.spines['right'].set_visible(False)
+                
+                if 'accuracy_baseline' in result.columns:
+                    baseline = attr_df['accuracy_baseline'].mean()
+                    ax1.axhline(baseline, color='#D55E00', linestyle=':', linewidth=2, label='Naive Baseline', zorder=6)
+                
+                ax1.legend(
+                    loc='upper center',
+                    bbox_to_anchor=(0.5, 1.15),
+                    ncol=3,
+                    frameon=False
+                )
+                
+                filename = f"attribute_disclosure_{attr}_nqis{qis_val}.png"         
+                plt.tight_layout(rect=[0, 0, 1, 0.94])
+                plt.savefig(os.path.join(output_path, filename),dpi=300, bbox_inches='tight')
+                plt.close(fig)    
+                
+def plot_asr_per_sensitive_attribute_plotly(data, output_path):
+    """Plot AIA related figures using Plotly.
+
+    Parameters
+    ----------
+    data : pd.DataFrame
+        Input dataframe from the AIAAttackReport class.
+    output_path : str
+        Path where the figures are to be saved (as HTML files).
+    """
+    df = data.copy(deep=True)
+    df['n_qis'] = df['quasi_identifiers'].apply(lambda x: len(x))
+
+    has_accuracy = 'accuracy' in df.columns and df['accuracy'].notna().any()
+    n_qis_levels = sorted(df['n_qis'].unique())
+
+    if not os.path.exists(output_path):
+        os.makedirs(output_path)
+
+    for qis_val in n_qis_levels:
+        qis_df = df[df['n_qis'] == qis_val].copy()
+        sensitive_attributes = qis_df['sensitive_attribute'].unique()
+
+        for attr in sensitive_attributes:
+            attr_df = qis_df[qis_df['sensitive_attribute'] == attr].copy()
+
+            if not has_accuracy:
+                print("Error: No accuracy df found for sensitive attribute or does not apply.")
+                continue
+
+            attr_df['attack_label'] = attr_df['attack'].apply(
+                lambda x: str(x).split('(')[0]
+            )
+
+            # Keep only worst-case (max accuracy) attack per attack type
+            attr_df = attr_df.reset_index(drop=True)
+            idx = attr_df.groupby('attack_label')['accuracy'].idxmax()
+            result = attr_df.loc[idx].reset_index(drop=True)
+
+            has_control  = 'accuracy_control'  in result.columns and result['accuracy_control'].notna().any()
+            has_baseline = 'accuracy_baseline' in result.columns and result['accuracy_baseline'].notna().any()
+
+            attack_labels = result['attack_label'].tolist()
+            x_pos = list(range(len(result)))
+            width = 0.3  # fractional bar width in plotly (0–1 scale)
+
+            traces = []
+
+            if has_control:
+                # Two bars — offset them symmetrically
+                member_x    = [v - width / 2 for v in x_pos]
+                nonmember_x = [v + width / 2 for v in x_pos]
+
+                traces.append(go.Bar(
+                    x=member_x,
+                    y=result['accuracy'],
+                    width=width,
+                    name='Member Success',
+                    marker_color='#56B4E9',
+                    text=[f"{v * 100:.0f}%" for v in result['accuracy']],
+                    textposition='outside',
+                    textfont=dict(size=12),
+                ))
+
+                traces.append(go.Bar(
+                    x=nonmember_x,
+                    y=result['accuracy_control'],
+                    width=width,
+                    name='Non Member Success',
+                    marker_color='#E69F00',
+                    text=[f"{v * 100:.0f}%" for v in result['accuracy_control']],
+                    textposition='outside',
+                    textfont=dict(size=12),
+                ))
+
+            else:
+                # Single bar — centered
+                traces.append(go.Bar(
+                    x=x_pos,
+                    y=result['accuracy'],
+                    width=width,
+                    name='Member Success',
+                    marker_color='#56B4E9',
+                    text=[f"{v * 100:.0f}%" for v in result['accuracy']],
+                    textposition='outside',
+                    textfont=dict(size=12),
+                ))
+
+            # Naive baseline horizontal line
+            if has_baseline:
+                baseline_val = attr_df['accuracy_baseline'].mean()
+                traces.append(go.Scatter(
+                    x=[min(x_pos) - 0.5, max(x_pos) + 0.5],
+                    y=[baseline_val, baseline_val],
+                    mode='lines',
+                    name='Naive Baseline',
+                    line=dict(color='#D55E00', dash='dot', width=2),
+                ))
+
+            fig = go.Figure(data=traces)
+
+            fig.update_layout(
+                barmode='overlay',  
+                title=dict(
+                    text=(
+                        f"KNOWN ATTRIBUTES COUNT: {qis_val} | "
+                        f"SENSITIVE ATTRIBUTE: {attr.upper()}"
+                    ),
+                    x=0,
+                    xanchor='left',
+                    font=dict(size=12, family='Arial Black, Arial', color='black'),
+                ),
+                xaxis=dict(
+                    tickmode='array',
+                    tickvals=x_pos,
+                    ticktext=attack_labels,
+                    title=dict(text='Attack Name', font=dict(size=13)),
+                    showgrid=False,
+                    zeroline=False,
+                ),
+                yaxis=dict(
+                    title=dict(text='Attack Success Rate (%)', font=dict(size=13)),
+                    range=[0, 1.1],
+                    tickformat='.0%',
+                    showgrid=True,
+                    gridcolor='#DDDDDD',
+                    gridwidth=1,
+                    zeroline=False,
+                ),
+                legend=dict(
+                    orientation='h',
+                    yanchor='bottom',
+                    y=1.05,
+                    xanchor='center',
+                    x=0.5,
+                    bgcolor='rgba(0,0,0,0)',
+                    borderwidth=0,
+                ),
+                plot_bgcolor='white',
+                paper_bgcolor='white',
+                width=None,
+                height=None,
+                margin=dict(l=60, r=40, t=100, b=60),
+            )
+
+            
+            fig.update_xaxes(showline=True, linecolor='black', mirror=False)
+            fig.update_yaxes(showline=True, linecolor='black', mirror=False)
+
+            filename = f"attribute_disclosure_{attr}_nqis{qis_val}.html"
+            fig.write_html(
+            os.path.join(output_path, filename),
+            full_html=False,          
+            include_plotlyjs='cdn',  
+            config={'responsive': True}
+            )
+            print(f"Saved: {filename}")
 
 
 def set_style():
@@ -244,8 +906,8 @@ def set_style():
             "font.family": "sans-serif",
             "font.sans-serif": ["Tahoma", "DejaVu Sans", "Arial", "Liberation Sans"],
             "font.size": 10,
-            "xtick.labelsize": 14,
-            "ytick.labelsize": 14,
+            "xtick.labelsize": 12,
+            "ytick.labelsize": 12,
             "axes.labelsize": 16,
             "axes.titlesize": 16,
             "savefig.dpi": 75,

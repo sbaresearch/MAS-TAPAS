@@ -11,7 +11,7 @@ if TYPE_CHECKING:
     from ..datasets import Dataset
     from ..threat_models import ThreatModel
 
-from ..threat_models import LabelInferenceThreatModel, TargetedAIA, NoBoxKnowledge
+from ..threat_models import LabelInferenceThreatModel, TargetedAIA, NoBoxKnowledge, NoBoxThreatModelAIA
 
 from abc import ABC, abstractmethod
     
@@ -133,7 +133,7 @@ class TrainableThresholdAttack(Attack):
 
     def train(
         self,
-        threat_model: LabelInferenceThreatModel,
+        threat_model: LabelInferenceThreatModel | NoBoxThreatModelAIA,
         num_samples: int = None,
         **attack_score_kwargs,
     ):
@@ -154,8 +154,8 @@ class TrainableThresholdAttack(Attack):
         """
         # First, optionally train the score.
         assert isinstance(
-            threat_model, LabelInferenceThreatModel
-        ), "Threat model must be a LabelInferenceThreatModel."
+            threat_model, LabelInferenceThreatModel|NoBoxThreatModelAIA
+        ), "Threat model must be a LabelInferenceThreatModel or NoBoxThreatModelAIA."
         self.threat_model = threat_model
         self._train_attack_score(threat_model, num_samples, **attack_score_kwargs)
         # For targeted AIAs, we implement a heuristic to compute the positive label.
@@ -250,6 +250,14 @@ class TrainableThresholdAttack(Attack):
         if self._threshold is None:
             raise Exception("Attack has not been trained (threshold is None).")
         scores = self.attack_score(datasets)
+        if isinstance(scores[0], (list, np.ndarray)):
+            predictions=[]
+            for s_vector in scores:
+                max_val = np.max(s_vector)
+                best_indices = np.where(np.isclose(s_vector, max_val, atol=1e-12))[0]
+                chosen_index = np.random.choice(best_indices)
+                predictions.append(self.threat_model.attribute_values[chosen_index])
+            return np.array(predictions)
         return np.array(
             [
                 self.positive_label if s >= self._threshold else self.negative_label

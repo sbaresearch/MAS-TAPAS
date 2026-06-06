@@ -13,9 +13,8 @@ import os
 import pandas as pd
 from scipy.stats import binomtest
 import warnings
-
 from .attack_summary import AttackSummary, MIAttackSummary
-from .utils import metric_comparison_plots, plot_roc_curve, DEFAULT_METRICS
+from .utils import metric_comparison_plots_plotly,metric_comparison_plots, plot_asr_per_sensitive_attribute_plotly, plot_interactive_roc_curve, plot_roc_curve, plot_asr_per_sensitive_attribute, DEFAULT_METRICS
 
 class Report(ABC):
     """
@@ -31,7 +30,7 @@ class Report(ABC):
         Compare the outcome of attacks, potentially on different threat models.
 
         """
-        pass
+        
 
 
 class BinaryLabelAttackReport(Report):
@@ -114,7 +113,7 @@ class BinaryLabelAttackReport(Report):
         self.attacks_data = summaries
         self.metrics = metrics or DEFAULT_METRICS
 
-    def compare(self, comparison_column, fixed_pair_columns, marker_column, filepath, include_one_marker_plots=True):
+    def compare(self, comparison_column, fixed_pair_columns, marker_column, filepath, include_one_marker_plots=True, interactive=False):
         """
         For a fixed pair of datasets-attacks-generators-target available in the data make a figure comparing
         performance between metrics. Options configure which dimension to compare against. Figures are saved to disk.
@@ -141,21 +140,33 @@ class BinaryLabelAttackReport(Report):
 
         """
 
-        metric_comparison_plots(
-            data=self.attacks_data,
-            comparison_label=comparison_column,
-            fixed_pair_label=fixed_pair_columns,
-            metrics=self.metrics,
-            marker_label=marker_column,
-            output_path=filepath,
-            include_one_marker_plots = include_one_marker_plots
-        )
+        if not interactive:
+            metric_comparison_plots(
+                data=self.attacks_data,
+                comparison_label=comparison_column,
+                fixed_pair_label=fixed_pair_columns,
+                metrics=self.metrics,
+                marker_label=marker_column,
+                output_path=filepath,
+                include_one_marker_plots = include_one_marker_plots
+            )
+        
+        else:
+            metric_comparison_plots_plotly(
+                data=self.attacks_data,
+                comparison_label=comparison_column,
+                fixed_pair_label=fixed_pair_columns,
+                metrics=self.metrics,
+                marker_label=marker_column,
+                output_path=filepath,
+                include_one_marker_plots = include_one_marker_plots
+            )
 
         return None
 
-    def publish(self, filepath, include_one_marker_plots = True):
+    def publish(self, filepath, include_one_marker_plots = True, all_comparison_plots=True, comparisons=None, interactive=False):
         """
-        Make all comparison plots and save them to disk.
+        Make all or defined comparison plots and save them to disk.
 
         Parameters
         ----------
@@ -163,33 +174,70 @@ class BinaryLabelAttackReport(Report):
             Path where the figure is to be saved.
         include_one_marker_plots: boolean
             Create also the plots where there is only one item in the legend.
-
+        all_comparison_plots: boolean 
+            Create all possible comparison plots.
+        comparisons : list[dict] or None
+        Required when all_comparison_plots=False. Each dict must contain:
+            - 'comparison_column'  : str
+            - 'fixed_pair_columns' : list[str] of length 2
+            - 'marker_column'      : str
+        All values must be one of: 'generator', 'dataset', 'attack', 'target_id'.
+        interactive: boolean (Returns html image or static image)
         Returns
         -------
         None
 
         """
+        VALID_COLUMNS = {"generator", "dataset", "attack", "target_id"}
+        
+        if all_comparison_plots:
 
-        # compare generators and target ids for fixed dataset-atacks
-        self.compare("generator", ["dataset", "attack"], "target_id", filepath, include_one_marker_plots)
+            # compare generators and target ids for fixed dataset-atacks
+            self.compare("generator", ["dataset", "attack"], "target_id", filepath, include_one_marker_plots,interactive)
 
-        # compare attacks and target ids for fixed dataset-generators
-        self.compare("attack", ["dataset", "generator"], "target_id", filepath, include_one_marker_plots)
+            # compare attacks and target ids for fixed dataset-generators
+            self.compare("attack", ["dataset", "generator"], "target_id", filepath, include_one_marker_plots,interactive)
 
-        # compare datasets and target ids for fixed attacks-generators
-        self.compare("dataset", ["attack", "generator"], "target_id", filepath, include_one_marker_plots)
+            # compare datasets and target ids for fixed attacks-generators
+            self.compare("dataset", ["attack", "generator"], "target_id", filepath, include_one_marker_plots,interactive)
 
-        # compare targets and generators ids for fixed attacks-dataset
-        self.compare("target_id", ["dataset", "attack"], "generator", filepath, include_one_marker_plots)
+            # compare targets and generators ids for fixed attacks-dataset
+            self.compare("target_id", ["dataset", "attack"], "generator", filepath, include_one_marker_plots,interactive)
 
-        # compare targets and attacks ids for fixed dataset-generators
-        self.compare("target_id", ["dataset", "generator"], "attack", filepath, include_one_marker_plots)
+            # compare targets and attacks ids for fixed dataset-generators
+            self.compare("target_id", ["dataset", "generator"], "attack", filepath, include_one_marker_plots,interactive)
 
-        # compare attacks and generators for fixed dataset-targets.
-        self.compare("generator", ["dataset", "target_id"], "attack", filepath, include_one_marker_plots)
+            # compare attacks and generators for fixed dataset-targets.
+            self.compare("generator", ["dataset", "target_id"], "attack", filepath, include_one_marker_plots, interactive)    
+            
+        else:
+            if not comparisons:
+                raise ValueError("comparisons must be a non-empty list of dicts when all_comparison_plots=False.")
+
+            for i, c in enumerate(comparisons):
+                missing = {"comparison_column", "fixed_pair_columns", "marker_column"} - c.keys()
+                if missing:
+                    raise ValueError(f"comparisons[{i}] is missing keys: {missing}.")
+
+                for key in ("comparison_column", "marker_column"):
+                    if c[key] not in VALID_COLUMNS:
+                        raise ValueError(f"comparisons[{i}]['{key}'] = '{c[key]}' is not valid. Choose from {VALID_COLUMNS}.")
+
+                if len(c["fixed_pair_columns"]) != 2:
+                    raise ValueError(f"comparisons[{i}]['fixed_pair_columns'] must have exactly 2 entries, got {c['fixed_pair_columns']}.")
+
+                for col in c["fixed_pair_columns"]:
+                    if col not in VALID_COLUMNS:
+                        raise ValueError(f"comparisons[{i}]['fixed_pair_columns'] entry '{col}' is not valid. Choose from {VALID_COLUMNS}.")
+
+            self.compare(c["comparison_column"], c["fixed_pair_columns"], c["marker_column"], filepath, include_one_marker_plots,interactive)
 
         print(f"All figures saved to directory {filepath}")
 
+
+
+    
+    
 
 class MIAttackReport(BinaryLabelAttackReport):
     """
@@ -257,6 +305,19 @@ class BinaryAIAttackReport(MIAttackReport):
     """
 
     # This is functionally identical to MIAttackReport.
+    
+class AIAAttackReport(MIAttackReport):
+    """
+    Report for Attribute Disclosure Attack
+    
+    """
+    def publish(self, filepath, interactive=False):
+        
+        if interactive:
+            plot_asr_per_sensitive_attribute_plotly(data=self.attacks_data, output_path=filepath)
+        else:
+            plot_asr_per_sensitive_attribute(data= self.attacks_data, output_path=filepath)
+        
 
 
 class ROCReport(Report):
@@ -275,6 +336,7 @@ class ROCReport(Report):
         curve_label="attack",
         eff_epsilon=None,
         zooms=[1],
+        interactive=False,
     ):
         """
         Parameters
@@ -298,6 +360,8 @@ class ROCReport(Report):
             restricted to [0, zoom] x [0, zoom] (low corner) and [1-zoom, zoom] x
             [1-zoom, zoom] (high corner). This allows to visualise the TPR at low FPR 
             (and TNR at low FNR) for privacy analysis.
+        interactive: bool, default False
+            If True, generates polished Plotly dashboards exported as interactive HTML.
 
         """
         self.summaries = attack_summaries
@@ -306,8 +370,9 @@ class ROCReport(Report):
         self.curve_label = curve_label
         self.eff_epsilon = eff_epsilon
         self.zooms = zooms
+        
 
-    def publish(self, filepath):
+    def publish(self, filepath, interactive):
         """
         Plot the ROC curves and save them to disk.
 
@@ -330,7 +395,7 @@ class ROCReport(Report):
             for zoom_in in self.zooms:
                 for low_corner in [True, False] if zoom_in < 1 else [True]:
                     # Decoration: have a nicely formatted file suffix and title.
-                    suffix = (
+                    current_suffix = (
                         self.suffix
                         + (
                             f"_zoom={zoom_in}_{'low' if low_corner else 'high'}"
@@ -339,25 +404,38 @@ class ROCReport(Report):
                         )
                         + g_suffix
                     )
-                    title = "Comparison of ROC curves"
-                    if suffix:
-                        tokens = suffix.split("_")
-                        if not tokens[0]:  # Remove the initial _.
-                            tokens = tokens[1:]
-                        title += "\n(" + (", ".join(tokens)) + ")"
-                    # Display the ROC curve for this setup.
-                    plot_roc_curve(
-                        [(s.labels, s.scores) for s in summaries],
-                        [
-                            getattr(s, self.curve_label) for s in summaries
-                        ],  # Legend labels.
-                        title,
-                        filepath,
-                        suffix,
-                        eff_epsilon=self.eff_epsilon,
-                        zoom_in=zoom_in,
-                        low_corner=low_corner,
-                    )
+                    if interactive:
+                        if low_corner:
+                            plot_interactive_roc_curve(
+                                summaries=summaries,
+                                curve_label=self.curve_label,
+                                eff_epsilon=self.eff_epsilon,
+                                zoom_in=zoom_in,
+                                low_corner=low_corner,
+                                output_path=filepath,
+                                current_suffix=current_suffix
+                            )
+                        
+                    else:
+                        title = "Comparison of ROC curves"
+                        if current_suffix:
+                            tokens = current_suffix.split("_")
+                            if not tokens[0]:  # Remove the initial _.
+                                tokens = tokens[1:]
+                            title += "\n(" + (", ".join(tokens)) + ")"
+                        # Display the ROC curve for this setup.
+                        plot_roc_curve(
+                            [(s.labels, s.scores) for s in summaries],
+                            [
+                                getattr(s, self.curve_label) for s in summaries
+                            ],  # Legend labels.
+                            title,
+                            filepath,
+                            current_suffix,
+                            eff_epsilon=self.eff_epsilon,
+                            zoom_in=zoom_in,
+                            low_corner=low_corner,
+                        )
 
 
 class EffectiveEpsilonReport(Report):

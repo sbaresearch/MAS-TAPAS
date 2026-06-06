@@ -5,5 +5,6 @@ from .report import (
     BinaryAIAttackReport,
     ROCReport,
     EffectiveEpsilonReport,
+    AIAAttackReport
 )
 from .utils import ALL_METRICS, DEFAULT_METRICS

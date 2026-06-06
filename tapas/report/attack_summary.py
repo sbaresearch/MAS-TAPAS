@@ -11,7 +11,7 @@ from abc import ABC, abstractmethod
 import numpy as np
 import os
 import pandas as pd
-
+import inspect
 import pickle
 
 from sklearn.metrics import roc_auc_score
@@ -89,6 +89,8 @@ class LabelInferenceAttackSummary(AttackSummary):
 
         """
         return np.mean(self.predictions == self.labels) #, axis=0)
+    
+    
 
     # TODO: add the metrics from Stadler et al. (privacy gain etc.)
 
@@ -393,6 +395,7 @@ class AIAttackSummary(LabelInferenceAttackSummary):
         dataset_info="",
         target_id="",
         sensitive_attribute="",
+        quasi_identifiers="",
     ):
         """
         Parameters
@@ -413,6 +416,8 @@ class AIAttackSummary(LabelInferenceAttackSummary):
             Metadata with information about the target record used on the attack.
         sensitive_attribute: str
             The name of the sensitive attribute that the attack aims to infer.
+        quasi_identifiers: list[str]
+            The name of the quasi-identifiers known by the attacker.
 
         """
         LabelInferenceAttackSummary.__init__(self, labels, predictions, scores)
@@ -421,6 +426,7 @@ class AIAttackSummary(LabelInferenceAttackSummary):
         self.dataset = dataset_info
         self.target_id = target_id
         self.sensitive_attribute = sensitive_attribute
+        self.quasi_identifiers = quasi_identifiers
 
     def get_header(self):
         """
@@ -435,6 +441,7 @@ class AIAttackSummary(LabelInferenceAttackSummary):
                     self.generator,
                     self.attack,
                     self.sensitive_attribute,
+                    self.quasi_identifiers
                 ]
             ],
             columns=[
@@ -443,6 +450,7 @@ class AIAttackSummary(LabelInferenceAttackSummary):
                 "generator",
                 "attack",
                 "sensitive_attribute",
+                "quasi_identifiers"
             ],
         )
 
@@ -493,6 +501,7 @@ class BinaryAIAttackSummary(AIAttackSummary, BinaryLabelInferenceAttackSummary):
         dataset_info="",
         target_id="",
         sensitive_attribute="",
+        quasi_identifiers="",
         positive_value=1,
     ):
         """
@@ -514,6 +523,8 @@ class BinaryAIAttackSummary(AIAttackSummary, BinaryLabelInferenceAttackSummary):
             Metadata with information about the target record used on the attack.
         sensitive_attribute: str
             The name of the sensitive attribute that the attack aims to infer.
+        quasi_identifiers: list[str]
+            The name of the quasi-identifiers known by the attacker.
         positive_value: int (default 1)
             The value of the sensitive attribute to mark as positive.
 
@@ -528,6 +539,7 @@ class BinaryAIAttackSummary(AIAttackSummary, BinaryLabelInferenceAttackSummary):
             dataset_info,
             target_id,
             sensitive_attribute,
+            quasi_identifiers
         )
         BinaryLabelInferenceAttackSummary.__init__(
             self, labels, predictions, scores, positive_label=positive_value
@@ -565,23 +577,56 @@ class BinaryAIAttackSummary(AIAttackSummary, BinaryLabelInferenceAttackSummary):
 
 
 class ExtendedAttackSummary():
-
+    """
+    Wrapper that extends an AttackSummary with 
+    pluggable, context-aware extra metrics.
+    """
     def __init__(self, original_attack_summary, *args, **kwargs):
+        
+        # Extract data needed for the extension
+        control_labels = kwargs.pop("control_labels", None)
+        control_preds = kwargs.pop("control_preds", None)
         extra_metrics = kwargs.pop("extra_metrics", None)
         extra_metrics_names = kwargs.pop("extra_metrics_names", None)
         
+        # Resolve extra metrics names 
         if extra_metrics_names is None and extra_metrics is not None:
             extra_metrics_names = [ex.__name__ for ex in extra_metrics]
         
+        # Instantiate the core summary
         self._original_instance = original_attack_summary(*args, **kwargs)
-        self.extra_metrics = {name: [metric(self._original_instance.labels, self._original_instance.predictions)] for name, metric in zip(extra_metrics_names, extra_metrics)}
-    
+        
+        context = {
+            "control_labels": control_labels,
+            "control_preds": control_preds
+        }
+        
+        self.extra_metrics = {}
+        for name,metric in zip(extra_metrics_names, extra_metrics):
+            
+            sig = inspect.signature(metric)
+            if "context" in sig.parameters:
+                # For metrics supporting context
+                res = metric( self._original_instance.labels, self._original_instance.predictions, context=context)
+            else:
+                # For standard (y_true, y_pred) metrics
+                res = metric(self._original_instance.labels, self._original_instance.predictions)
+
+            # Standardize multi-result dicts into a single extra_metrics store
+            if isinstance(res, dict):
+                for sub_name, val in res.items():
+                    self.extra_metrics[sub_name] = [val]
+            else:
+                self.extra_metrics[name] = [res]
+        
     def get_metrics(self):
-        return pd.concat(
-                [self._original_instance.get_metrics(), 
-                 pd.DataFrame(self.extra_metrics)], axis=1
-        ).round(3)
+        """Merges core results with extended metrics."""
+        core_df = self._original_instance.get_metrics()
+        extra_df = pd.DataFrame(self.extra_metrics)
+        return pd.concat([core_df, extra_df], axis=1).round(3)
 
     def __getattr__(self, name):
-        # Delegate attribute access to the original instance
+        """Delegates attribute access to the original instance."""
         return getattr(self._original_instance, name)
+
+

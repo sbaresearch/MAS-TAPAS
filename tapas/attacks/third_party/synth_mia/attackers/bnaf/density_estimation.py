@@ -1,6 +1,4 @@
-# from BNAF (De Cao et al., 2018), https://github.com/nicola-decao/BNAF
-
-# # stdlib
+# stdlib
 from pathlib import Path
 from typing import Any, Callable, List, Optional, Tuple
 
@@ -10,12 +8,13 @@ import torch
 from torch import nn
 from tqdm import tqdm
 
-# domias absolute
-from .domias_models import BNAF, MaskedWeight, Permutation, Sequential, Tanh, Adam, ReduceLROnPlateau
-
-from ..utils import verbosed
+from .bnaf import BNAF, MaskedWeight, Permutation, Sequential, Tanh
+from .optim.adam import Adam
+from .optim.lr_scheduler import ReduceLROnPlateau
 
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+
 
 def load_dataset(
     data_train: Optional[np.ndarray] = None,
@@ -23,7 +22,6 @@ def load_dataset(
     data_test: Optional[np.ndarray] = None,
     device: Any = DEVICE,
     batch_dim: int = 50,
-    verbose=0
 ) -> Tuple[
     torch.utils.data.DataLoader,
     torch.utils.data.DataLoader,
@@ -34,10 +32,10 @@ def load_dataset(
             torch.from_numpy(data_train).float().to(device)
         )
         if data_valid is None:
-            verbosed("No validation set passed",verbose)
+            print("No validation set passed")
             data_valid = np.random.randn(*data_train.shape)
         if data_test is None:
-            verbosed("No test set passed",verbose)
+            print("No test set passed")
             data_test = np.random.randn(*data_train.shape)
 
         dataset_valid = torch.utils.data.TensorDataset(
@@ -71,6 +69,7 @@ def create_model(
     n_layers: int = 3,
     hidden_dim: int = 32,
     residual: Optional[str] = "gated",  # [None, "normal", "gated"]
+    verbose: bool = False,
     device: Any = DEVICE,
     batch_dim: int = 50,
 ) -> nn.Module:
@@ -116,12 +115,12 @@ def save_model(
     epoch: int,
     save: bool = False,
     workspace: Path = Path("workspace"),
-    verbose=0
 ) -> Callable:
     workspace.mkdir(parents=True, exist_ok=True)
 
     def f() -> None:
         if save:
+            print("Saving model..")
             torch.save(
                 {
                     "model": model.state_dict(),
@@ -138,13 +137,12 @@ def load_model(
     model: nn.Module,
     optimizer: Any,
     workspace: Path = Path("workspace"),
-    verbose=0
 ) -> Callable:
     def f() -> None:
         if workspace.exists():
             return
 
-        verbosed("Loading model..",verbose)
+        print("Loading model..")
         if (workspace / "checkpoint.pt").exists():
             checkpoint = torch.load(workspace / "checkpoint.pt")
             model.load_state_dict(checkpoint["model"])
@@ -154,8 +152,7 @@ def load_model(
 
 
 def compute_log_p_x(model: nn.Module, x_mb: torch.Tensor) -> torch.Tensor:
-
-    y_mb, log_diag_j_mb = model(x_mb.to(DEVICE))
+    y_mb, log_diag_j_mb = model(x_mb)
     log_p_y_mb = (
         torch.distributions.Normal(torch.zeros_like(y_mb), torch.ones_like(y_mb))
         .log_prob(y_mb)
@@ -177,22 +174,11 @@ def train(
     epochs: int = 50,
     save: bool = False,
     clip_norm: float = 0.1,
-    verbose = 0,
 ) -> Callable:
-    epoch_t =  tqdm(
-        range(start_epoch, start_epoch + epochs),
-        disable=(verbose == 0),
-        smoothing=0, ncols=100,
-        desc="Epochs"
-    )
-    for epoch in epoch_t:
+    epoch = start_epoch
+    for epoch in range(start_epoch, start_epoch + epochs):
 
-        t = tqdm(
-            data_loader_train,
-            disable=(verbose < 2),
-            smoothing=0, ncols=80,
-            leave=False
-        )
+        t = tqdm(data_loader_train, smoothing=0, ncols=80)
         train_loss: torch.Tensor = []
 
         for (x_mb,) in t:
@@ -218,24 +204,27 @@ def train(
         ).mean()
         optimizer.swap()
 
-        epoch_t.set_postfix_str({
-            f"train_loss_{epoch}": "{:.2f}".format(train_loss.item()),
-            f"val_loss_{epoch}": "{:.2f}".format(validation_loss.item())
-        })
-    
+        print(
+            "Epoch {:3}/{:3} -- train_loss: {:4.3f} -- validation_loss: {:4.3f}".format(
+                epoch + 1,
+                start_epoch + epochs,
+                train_loss.item(),
+                validation_loss.item(),
+            )
+        )
 
         stop = scheduler.step(
             validation_loss,
             callback_best=save_model(
-                model, optimizer, epoch + 1, save=save, workspace=workspace, verbose=verbose
+                model, optimizer, epoch + 1, save=save, workspace=workspace
             ),
-            callback_reduce=load_model(model, optimizer, workspace=workspace, verbose=verbose),
+            callback_reduce=load_model(model, optimizer, workspace=workspace),
         )
 
         if stop:
             break
 
-    load_model(model, optimizer, workspace=workspace,verbose=verbose)()
+    load_model(model, optimizer, workspace=workspace)()
     optimizer.swap()
     validation_loss = -torch.stack(
         [compute_log_p_x(model, x_mb).mean().detach() for x_mb, in data_loader_valid],
@@ -245,9 +234,9 @@ def train(
         [compute_log_p_x(model, x_mb).mean().detach() for x_mb, in data_loader_test], -1
     ).mean()
 
-    verbosed("###### Stop training after {} epochs!".format(epoch + 1), verbose)
-    verbosed("Validation loss: {:4.3f}".format(validation_loss.item()), verbose)
-    verbosed("Test loss:       {:4.3f}".format(test_loss.item()), verbose)
+    print("###### Stop training after {} epochs!".format(epoch + 1))
+    print("Validation loss: {:4.3f}".format(validation_loss.item()))
+    print("Test loss:       {:4.3f}".format(test_loss.item()))
 
     if save:
         with open(workspace / "results.txt", "a") as f:
@@ -283,36 +272,35 @@ def density_estimator_trainer(
     polyak: float = 0.998,
     save: bool = True,
     load: bool = True,
-    verbose=0,
 ) -> Tuple[Callable, nn.Module]:
-    verbosed("Loading dataset..", verbose)
+    print("Loading dataset..")
     data_loader_train, data_loader_valid, data_loader_test = load_dataset(
         data_train,
         data_val,
         data_test,
         device=device,
         batch_dim=batch_dim,
-        verbose=verbose
     )
 
     if save:
-        verbosed("Creating directory experiment..", verbose)
+        print("Creating directory experiment..")
         workspace.mkdir(parents=True, exist_ok=True)
 
-    verbosed("Creating BNAF model..", verbose)
+    print("Creating BNAF model..")
     model = create_model(
         data_train.shape[1],
         batch_dim=batch_dim,
         n_flows=flows,
         n_layers=layers,
         hidden_dim=hidden_dim,
+        verbose=True,
         device=device,
     )
 
-    verbosed("Creating optimizer..", verbose)
+    print("Creating optimizer..")
     optimizer = Adam(model.parameters(), lr=learning_rate, amsgrad=True, polyak=polyak)
 
-    verbosed("Creating scheduler..", verbose)
+    print("Creating scheduler..")
 
     scheduler = ReduceLROnPlateau(
         optimizer,
@@ -325,9 +313,9 @@ def density_estimator_trainer(
     )
 
     if load:
-        load_model(model, optimizer, workspace=workspace, verbose=verbose)()
+        load_model(model, optimizer, workspace=workspace)()
 
-    verbosed("Training..", verbose)
+    print("Training..")
     p_func = train(
         model,
         optimizer,
@@ -340,6 +328,5 @@ def density_estimator_trainer(
         epochs=epochs,
         save=save,
         clip_norm=clip_norm,
-        verbose=verbose
     )
     return p_func, model

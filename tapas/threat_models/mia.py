@@ -26,6 +26,19 @@ from ..report import MIAttackSummary
 import numpy as np
 import warnings
 
+class MIA:
+    """
+    Minimal interface for Membership Inference Attacks.
+    Any threat model that wants to run MIA attacks can inherit from this.
+    """
+
+    @property
+    def target_record(self):
+        """
+        The record that the attack tries to infer membership for.
+        Must be provided by any subclass.
+        """
+        raise NotImplementedError
 
 class MIALabeller(AttackerKnowledgeWithLabel):
     """
@@ -236,3 +249,200 @@ class TargetedMIA(LabelInferenceThreatModel):
         LabelInferenceThreatModel.set_label(self, label)
         # We also set self.target_record, to be used by .
         self.target_record = self._target_records[label]
+
+class PostHocThreatModelMIA(ThreatModel):
+    """
+    Some threat models considered using only synthetic datasets generated as 
+    the attacker's knowledge.
+
+    """
+    def __init__(
+        self,
+        training_dataset: Dataset,
+        synthetic_datasets: list[Dataset],
+        reference_dataset: Dataset,
+        membership_labels: list[int],   # 1 if target was in training set, 0 otherwise
+        attacker_knowledge_data: AttackerKnowledgeOnData,
+        target_record: Dataset,
+        attacker_knowledge_generator: AttackerKnowledgeOnGenerator,
+    ):
+        
+        self.synthetic_datasets = synthetic_datasets
+        self.labels = membership_labels
+        self.num_labels=len(target_record)
+        self._target_records = [r for r in target_record]
+        self.target_record = self._target_records[0]
+        self.atk_know_gen = attacker_knowledge_generator
+        self.atk_know_data = attacker_knowledge_data
+        
+    def set_label(self, i: int):
+        self.target_record = self._target_records[i]
+
+    def test(self, attack, *args, **kwargs):
+        attack.threat_model = self
+        attack.positive_label = 1
+        attack.negative_label = 0
+
+        all_truth = []
+        all_pred = []
+        all_scores = []
+
+        for i in range(self.num_labels):
+            self.set_label(i)
+            pred_labels = attack.attack(self.synthetic_datasets)
+            scores = attack.attack_score(self.synthetic_datasets)
+            
+            all_pred.append(pred_labels)
+            all_scores.append(scores)
+
+        # stack results per target
+        truth = self.labels
+        preds = np.vstack(all_pred)
+        scores = np.vstack(all_scores)
+
+        return self._wrap_output(truth, preds, scores, attack)
+
+    def _wrap_output(self, truth_labels, pred_labels, scores, attack):
+        if self.num_labels > 1:
+            target_id = "all"#",".join([rec.label for rec in self._target_records])
+        else:
+            target_id = self.target_record.label
+        return MIAttackSummary(
+            truth_labels,
+            pred_labels,
+            scores,
+            generator_info=self.atk_know_gen.label,
+            attack_info=attack.label,
+            dataset_info="Ground Truth",
+            target_id=target_id,
+        )
+    
+class NoBoxThreatModelMIA(ThreatModel):
+    """
+    Post Hoc Threat model for a no-box synthetic data scenario.
+    
+    Assumptions:
+    - Attacker only has access to synthetic data (or multiple synthetic datasets).
+    - Attacker may have auxiliary data from the same distribution.
+    - Attacker wants to infer membership of records in the dataset used for training .
+    """
+    def __init__(self,
+                attacker_knowledge_data: AttackerKnowledgeOnData, 
+                attacker_knowledge_generator: AttackerKnowledgeOnGenerator,
+                target_records: Dataset,
+                target_data: str = 'all'
+    ):
+                
+        # Check that the targets are not already in the attackers knowledge data.
+        self._assert_non_membership(target_records, attacker_knowledge_data)
+        
+        self.atk_know_data = attacker_knowledge_data
+        self.atk_know_gen = attacker_knowledge_generator
+        self.training_data = target_records
+        self.target_data = target_data
+        
+        # Store number of targets
+        self.num_labels = len(self.training_data)
+        
+         
+    def _build_ground_truth(
+        self,
+        balance: bool = False
+    ):
+        """
+        Construct ground truth labels for evaluation based on training and testing data provided.
+        
+        Parameters
+        ----------
+        balance : bool, default=False
+            If True, subsample the larger class to obtain
+            a balanced member/non-member evaluation set.
+        
+        Returns
+        -------
+        target_records : Dataset
+            Combined member and non-member records.
+
+        true_labels: list[int]
+            Binary membership labels:
+                1 -> member
+                0 -> non-member
+        """
+        
+        # Training data used for synthetic data generation is selected as members
+        members = self.training_data
+        
+        # Uses a subset of auxiliary data (test data) as non members 
+        non_members = self.atk_know_data.test_data
+        
+        # Optional balancing
+        if balance:
+            # Get the smallest set between members and non-members
+            n = min(len(members.data), len(non_members.data))
+
+            if len(members.data) > n:
+                members = members.sample(n)
+
+            if len(non_members.data) > n:
+                non_members = non_members.sample(n)
+                
+        # Construct evaluation set
+        target_records = members.add_records(non_members)
+        
+        true_labels = [[1]] * len(members) + [[0]] * len(non_members)
+
+        return target_records, true_labels
+
+
+    def test(self, attack, balance=False):
+
+        """
+        Evaluate an Attack object against this threat model.
+        """
+        
+        # Get the synthetic datasets (list of one or more releases).
+        synthetic_datasets = self.atk_know_gen.generate(None, training_mode=False)
+        
+        self._target_records, self.true_labels = self._build_ground_truth(balance=balance)
+        
+        pred_labels = attack.attack(synthetic_datasets)
+        scores = attack.attack_score(synthetic_datasets)         
+
+        return self._wrap_output(self.true_labels, pred_labels, scores, attack)
+
+    def _wrap_output(self, truth_labels, pred_labels, scores, attack):
+        
+        
+        return MIAttackSummary(
+            truth_labels,
+            pred_labels,
+            scores,
+            generator_info=self.atk_know_gen.label,
+            attack_info=attack.label,
+            dataset_info="Ground Truth",
+            target_id=self.target_data,
+        )
+        
+    def _assert_non_membership(self, target_record, attacker_knowledge_data):
+        """
+        Checks that target records are not used in the attacker knowledge's data.
+
+        This does not raise an error but a warning that can be ignored. However,
+        in most cases, it is recommended to ensure that target records are not also
+        found in the auxiliary data, as this may make the task of inferring membership
+        less meaningful: i.e., although "the" target record was not added to the
+        dataset, another identical record is present in that data.
+
+        """
+        # Get all records used to simulate real training data.
+        data_used = attacker_knowledge_data._get_data()
+        num_records_found_in_data = sum([(r in data_used) for r in target_record])
+        if num_records_found_in_data > 0:
+            warnings.warn(
+                f"{num_records_found_in_data} target record(s) were found in the auxiliary data. "
+                + "This is not recommended: it is best to remove target records to avoid duplicates "
+                + "and ensure that the task of membership inference is meaningful."
+            )
+        
+
+        

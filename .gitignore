@@ -16,3 +16,4 @@ examples/mlruns
 examples/artifacts
 examples/workspace
 tapas/tests/output/*
+tapas/tests/outputs/*

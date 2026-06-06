@@ -118,24 +118,31 @@ class GeneratorFromExecutable(Generator):
         return self._label
 
 class NoBoxGenerator(Generator):
-    """This generator samples from the synthetic data."""
+    """This generator samples from one or more pre-existing synthetic datasets.
+
+    When multiple datasets are provided (e.g. multiple releases of the same
+    model), generate() returns one sampled dataset per release, enabling
+    attacks to exploit consistency across releases.
+    """
     def __init__(self, synthetic_data, label="NoBoxGenerator"):
         super().__init__()
-        self.dataset = synthetic_data
+        self.datasets = synthetic_data if isinstance(synthetic_data, list) else [synthetic_data]
         self._label = label
 
     def fit(self, dataset):
         self.trained = True
 
-    def generate(self, num_samples = None, random_state = None):
-        if self.trained: 
-            return self.dataset.sample(num_samples, random_state = random_state)
-        else:
+    def generate(self, num_samples=None, random_state=None):
+        if not self.trained:
             raise RuntimeError("No dataset provided to generator")
-        
-    def __call__(self, dataset, num_samples, random_state = None):
+        return [
+            ds if num_samples is None else ds.sample(num_samples, random_state=random_state)
+            for ds in self.datasets
+        ]
+
+    def __call__(self, dataset, num_samples, random_state=None):
         self.fit(dataset)
-        return self.generate(num_samples, random_state = random_state)
+        return self.generate(num_samples, random_state=random_state)
 
     @property
     def label(self):
