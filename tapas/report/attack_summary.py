@@ -598,7 +598,8 @@ class ExtendedAttackSummary():
         
         context = {
             "control_labels": control_labels,
-            "control_preds": control_preds
+            "control_preds": control_preds,
+            "scores": self._original_instance.scores,
         }
         
         self.extra_metrics = {}
