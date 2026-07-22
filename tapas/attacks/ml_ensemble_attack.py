@@ -66,20 +66,30 @@ class MLInferenceAttack(Attack):
         
         self.threat_model = threat_model
         self.categorical = (threat_model.sensitive_attribute_type == "finite")
-        
+        self.mem = {}
+
         if self.categorical:
             self.voter = VotingClassifier(
-                estimators=list(CAT_ESTIMATORS.items()), 
+                estimators=list(CAT_ESTIMATORS.items()),
                 voting='soft', n_jobs=-1
             )
+            # The classes come from the threat model.
+            self.attribute_values = list(threat_model.attribute_values or [])
+            if not self.attribute_values:
+                raise ValueError(
+                    "MLInferenceAttack requires the threat model to define the "
+                    "possible values of the sensitive attribute, but "
+                    f"attribute_values is {threat_model.attribute_values!r}."
+                )
             self.label_encoder = LabelEncoder()
+            self.label_encoder.fit(np.asarray(self.attribute_values))
         else:
             self.voter = VotingRegressor(
-                estimators=list(NUM_ESTIMATORS.items()), 
+                estimators=list(NUM_ESTIMATORS.items()),
                 n_jobs=-1
             )
-        
-        self.trained = True        
+
+        self.trained = True
 
     def attack(self, datasets: List[pd.DataFrame]) -> List[int]:
         """
@@ -93,9 +103,9 @@ class MLInferenceAttack(Attack):
                 indices = (scores > 0.5).astype(int)
             else:
                 # Multi-class: Index of highest probability
-                indices = np.argmax(scores, axis=1) 
+                indices = np.argmax(scores, axis=1)
 
-            return self.label_encoder.inverse_transform(indices)
+            return np.array([self.attribute_values[i] for i in indices])
         
         # Continuous: Scores are the predictions
         return scores
@@ -123,7 +133,16 @@ class MLInferenceAttack(Attack):
                 y_syn = dataset.view(columns=[self.threat_model.sensitive_attribute])
                 
                 if self.categorical:
-                    y_syn = self.label_encoder.fit_transform(y_syn.data.values.ravel())
+                    values_syn = y_syn.data.values.ravel()
+                    unknown = set(np.unique(values_syn)) - set(self.attribute_values)
+                    if unknown:
+                        raise ValueError(
+                            f"The synthetic data contains values of "
+                            f"'{self.threat_model.sensitive_attribute}' that the "
+                            "threat model does not declare in attribute_values: "
+                            f"{sorted(unknown)}."
+                        )
+                    y_syn = self.label_encoder.transform(values_syn)
                 else:
                     y_syn = y_syn.data.values.ravel()
                 
@@ -134,10 +153,16 @@ class MLInferenceAttack(Attack):
                 self.mem[key] = voter
                           
             if self.categorical:
-                # Categorical: predict_proba[1] for binary or full vector for multi-class
-                res = voter.predict_proba(target_record_x.as_numeric)[0]
-                if len(res) == 2:
-                    res = res[1]  # Return probability of positive (first) class
+                # Categorical: predict_proba only has a column per class present
+                # in this release, so expand it to one entry per declared value,
+                # in attribute_values order.
+                probs_present = voter.predict_proba(target_record_x.as_numeric)[0]
+                res = np.zeros((len(self.attribute_values),))
+                for encoded_label, probability in zip(voter.classes_, probs_present):
+                    value = self.label_encoder.inverse_transform([encoded_label])[0]
+                    res[self.attribute_values.index(value)] = probability
+                if len(self.attribute_values) == 2:
+                    res = res[1]  # Return probability of the positive (second) class
             else:
                 # Numerical: return the predicted continuous value
                 prediction = voter.predict(target_record_x.as_numeric)
