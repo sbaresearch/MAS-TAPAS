@@ -178,6 +178,22 @@ class TrainableThresholdAttack(Attack):
                 raise Exception(
                     "This threat model is no-box, yet no threshold was provided to this attack."
                 )
+            # Consistently with BinaryAIAttackSummary, the second value is
+            # treated as the positive one.
+            attribute_values = getattr(threat_model, "attribute_values", None)
+            if (
+                isinstance(threat_model, NoBoxThreatModelAIA)
+                and attribute_values is not None
+                and len(attribute_values) == 2
+            ):
+                if self.positive_label is None:
+                    self.positive_label = attribute_values[1]
+                if self.negative_label is None:
+                    first, second = attribute_values
+                    self.negative_label = (
+                        first if self.positive_label == second else second
+                    )
+                return  # All "training" (setting internal variables) finished.
             self.positive_label = self.positive_label or True
             if self.negative_label is None:
                 self.negative_label = not self.positive_label
