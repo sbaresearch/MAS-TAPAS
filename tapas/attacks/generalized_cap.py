@@ -78,7 +78,21 @@ class GeneralizedCAPAttack(Attack):
                 f"GeneralizedCAPAttack is only compatible with categorical (finite) attributes. "
                 f"The schema defines '{sensitive_attribute}' as categorical."
             )
-        
+
+        # The set of classes is taken from the threat model.
+        self.attribute_values = list(threat_model.attribute_values or [])
+        if not self.attribute_values:
+            raise ValueError(
+                "GeneralizedCAPAttack requires the threat model to define the "
+                "possible values of the sensitive attribute, but "
+                f"attribute_values is {threat_model.attribute_values!r}."
+            )
+        self.label_encoder.fit(np.asarray(self.attribute_values))
+
+        # Drop anything fitted for a previous threat model: the quasi-identifiers
+        # (and hence the feature space) may well have changed.
+        self.preprocessor = None
+
         self.trained = True
         
         
@@ -112,7 +126,15 @@ class GeneralizedCAPAttack(Attack):
         for dataset in datasets:
             # Use preprocessor to transform the data
             X_syn = self.preprocessor.transform(dataset.view(exclude_columns=[self.threat_model.sensitive_attribute]).data)
-            y_syn = self.label_encoder.fit_transform(dataset.view(columns=[self.threat_model.sensitive_attribute]).data.values.ravel())
+            values_syn = dataset.view(columns=[self.threat_model.sensitive_attribute]).data.values.ravel()
+            unknown = set(np.unique(values_syn)) - set(self.attribute_values)
+            if unknown:
+                raise ValueError(
+                    f"The synthetic data contains values of "
+                    f"'{self.threat_model.sensitive_attribute}' that the threat "
+                    f"model does not declare in attribute_values: {sorted(unknown)}."
+                )
+            y_syn = self.label_encoder.transform(values_syn)
                   
             # Find Rho (Algorithm 3.1: while N is empty, increase r)
             finder = NearestNeighbors(metric='manhattan')
@@ -131,15 +153,19 @@ class GeneralizedCAPAttack(Attack):
             )
             neigh.fit(X_syn, y_syn)
             
-            # Get probabilities for all possible sensitive values
-            probs = neigh.predict_proba(x_target)[0]
-            
-            # If binary target, returns probability of positive class 
-            if len(probs) == 2:
+            # Get probabilities for all possible sensitive values.
+            probs_present = neigh.predict_proba(x_target)[0]
+            probs = np.zeros((len(self.attribute_values),))
+            for encoded_label, probability in zip(neigh.classes_, probs_present):
+                value = self.label_encoder.inverse_transform([encoded_label])[0]
+                probs[self.attribute_values.index(value)] = probability
+
+            # If binary target, returns probability of positive class
+            if len(self.attribute_values) == 2:
                 all_scores.append(probs[1])
             else:
                 all_scores.append(probs)
-                 
+
         return np.array(all_scores)
     
     def attack(self, datasets):
@@ -156,16 +182,18 @@ class GeneralizedCAPAttack(Attack):
         """
         
         scores = self.attack_score(datasets)
-        
+
         if scores.ndim == 1:
             # Binary target: 1 if prob > 0.5, else 0
             indices = (scores > 0.5).astype(int)
         else:
             # Multi-class: Index of highest probability
             indices = np.argmax(scores, axis=1)
-            
-        predictions = self.label_encoder.inverse_transform(indices)
-        
+
+        # Scores are ordered by attribute_values, so index into that directly:
+        # the label encoder sorts its classes and would not agree.
+        predictions = np.array([self.attribute_values[i] for i in indices])
+
         return predictions
 
     @property
