@@ -17,6 +17,7 @@ if TYPE_CHECKING:
 
 
 import numpy as np
+import warnings
 from sklearn.metrics import roc_curve
 
 from .base_classes import Attack, TrainableThresholdAttack
@@ -179,6 +180,10 @@ class LocalNeighbourhoodAttack(TrainableThresholdAttack):
 
     For attribute inference attacks, the score is the fraction of all records
     within the sphere which have a given value for the sensitive attribute.
+    For no-box attribute inference attacks, the sphere is computed over the
+    quasi-identifiers only: the target record known to the attack holds the true
+    value of the sensitive attribute, which must not be allowed to shape the
+    neighbourhood used to infer it.
 
     """
 
@@ -197,6 +202,10 @@ class LocalNeighbourhoodAttack(TrainableThresholdAttack):
         distance: DistanceMetric
             Distance to use between records for the attack.
         radius: float
+            Records within this distance of the target record form the sphere.
+            For no-box attribute inference attacks, the distance is computed
+            over the quasi-identifiers only (the sensitive attribute is
+            excluded), so `radius` is a budget over the known attributes.
         criterion: tuple
             Criterion to select the threshold (see TrainableThresholdAttack for details).
         label (optional): name of this attack, for reporting.
@@ -228,15 +237,60 @@ class LocalNeighbourhoodAttack(TrainableThresholdAttack):
         # First, check that the attack model is compatible.
         if isinstance(self.threat_model, TargetedMIA):
             mia = True
-        elif isinstance(self.threat_model, TargetedAIA | NoBoxThreatModelAIA):
+        elif isinstance(self.threat_model, (TargetedAIA, NoBoxThreatModelAIA)):
             mia = False
         else:
             raise Exception("Unsupported threat model.")
+        target_record = self.threat_model.target_record
+        # For no-box AIAs, target_record carries the *true* value of the
+        # sensitive attribute -- the very value the attack is meant to infer.
+        # Leaving it in the metric would define the neighbourhood from the
+        # answer, making the attack trivially (and spuriously) successful, so it
+        # is excluded from the distance. TargetedAIA is deliberately left as is:
+        # AIALabeller resamples the sensitive value before inserting the record
+        # in the dataset, so the value carried by target_record is independent
+        # of the label and leaks nothing.
+        exclude_sensitive = isinstance(self.threat_model, NoBoxThreatModelAIA)
+        if not mia:
+            attr_values = self.threat_model.attribute_values
+            sensitive_attribute = self.threat_model.sensitive_attribute
+            if not attr_values:
+                raise Exception(
+                    f"{self.label} requires the threat model to define the "
+                    "possible values of the sensitive attribute, but "
+                    f"attribute_values is {attr_values!r}."
+                )
+            if exclude_sensitive:
+                target_record = target_record.view(
+                    exclude_columns=[sensitive_attribute]
+                )
+                # With a per-attribute distance such as Hamming, no record can
+                # be further than the number of quasi-identifiers: a radius that
+                # large puts the whole release in the sphere, and the score
+                # becomes the global marginal of the sensitive attribute -- the
+                # majority-class baseline, not an attack.
+                num_quasi_identifiers = len(self.threat_model.quasi_identifiers)
+                if self.radius >= num_quasi_identifiers:
+                    warnings.warn(
+                        f"{self.label}: radius ({self.radius}) is not smaller "
+                        f"than the number of quasi-identifiers "
+                        f"({num_quasi_identifiers}). With a per-attribute "
+                        "distance the neighbourhood is then the entire release "
+                        "and the attack degenerates to predicting the most "
+                        "frequent value. Use a smaller radius."
+                    )
         # Compute local spheres and decision based on that.
         scores = []
         for dataset in datasets:
-            # Compute the sphere around the record.
-            distances = self.distance(self.threat_model.target_record, dataset)[0]
+            # Compute the sphere around the record. The sensitive attribute is
+            # dropped from both sides of the distance for no-box AIAs, so that
+            # `radius` is a distance over the quasi-identifiers only.
+            neighbourhood = (
+                dataset.view(exclude_columns=[sensitive_attribute])
+                if exclude_sensitive
+                else dataset
+            )
+            distances = self.distance(target_record, neighbourhood)[0]
             in_sphere = distances <= self.radius
             # Make a decision based on this.
             if mia:
@@ -245,7 +299,6 @@ class LocalNeighbourhoodAttack(TrainableThresholdAttack):
             else:
                 # AIA: compute a histogram of the attribute values.
                 if isinstance(dataset, TabularDataset):
-                    attr_values = self.threat_model.attribute_values
                     if in_sphere.sum() == 0:
                         # If there are no entries, make the score be 1/k
                         k = len(attr_values)
@@ -254,12 +307,26 @@ class LocalNeighbourhoodAttack(TrainableThresholdAttack):
                         s = np.zeros((len(attr_values),))
                         # We here use the internal representation of the dataset
                         # as a Pandas DataFrame.
-                        values_in_sphere = dataset.data[
-                            self.threat_model.sensitive_attribute
-                        ].values[in_sphere]
+                        values_in_sphere = dataset.data[sensitive_attribute].values[
+                            in_sphere
+                        ]
                         # Compute a score for each value.
                         for i, v in enumerate(attr_values):
                             s[i] = np.mean(values_in_sphere == v)
+                        if s.sum() == 0:
+                            # No value in the neighbourhood matches any of
+                            # attr_values. This is typically a type mismatch
+                            # (e.g. "1" against an integer column), and would
+                            # otherwise pass silently: every value scores 0, and
+                            # the prediction degenerates into a uniform guess.
+                            warnings.warn(
+                                f"{self.label}: none of attribute_values "
+                                f"{list(attr_values)} matches any value of "
+                                f"'{sensitive_attribute}' in the neighbourhood "
+                                f"(e.g. {values_in_sphere[0]!r}). All scores are "
+                                "zero; check that attribute_values has the same "
+                                "type as the column."
+                            )
                     # If there are only two values, return the score for the
                     # second ("positive") value.
                     if len(attr_values) == 2:
