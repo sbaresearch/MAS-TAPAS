@@ -19,8 +19,9 @@ from tapas.threat_models import (
     TargetedAIA,
     AuxiliaryDataKnowledge,
     BlackBoxKnowledge,
+    NoBoxKnowledge,
 )
-from tapas.generators import Raw
+from tapas.generators import Raw, NoBoxGenerator
 
 # The classes being tested.
 from tapas.attacks import (
@@ -394,7 +395,195 @@ class TestLocalNeighbourhoodAttack(TestCase):
         print(scores)
         self.assertIsInstance(scores, np.ndarray)
         self.assertEqual(scores.shape, (1,))
-        
+
+
+class TestLocalNeighbourhoodNoBoxAIA(TestCase):
+    """
+    Under a no-box AIA the target record holds the true value of the sensitive
+    attribute, so that attribute must not take part in defining the sphere.
+
+    """
+
+    description = DataDescription([
+        {"name": "age", "type": "finite", "representation": [20, 25, 30]},
+        {"name": "zip", "type": "finite", "representation": [101, 102]},
+        {"name": "sensitive", "type": "finite", "representation": ["A", "B", "C"]},
+    ])
+
+    def _dataset(self, rows):
+        return TabularDataset(
+            pd.DataFrame(rows, columns=["age", "zip", "sensitive"]), self.description
+        )
+
+    def _threat_model(self, synthetic, attribute_values=["A", "B", "C"]):
+        return NoBoxThreatModelAIA(
+            target_records=self._dataset([(30, 101, v) for v in ["A", "B", "C"]]),
+            sensitive_attribute="sensitive",
+            quasi_identifiers=["age", "zip"],
+            attribute_values=attribute_values,
+            attacker_knowledge_data=AuxiliaryDataKnowledge(
+                self._dataset([(20, 102, "A"), (25, 101, "B")]), auxiliary_split=0.5
+            ),
+            attacker_knowledge_generator=NoBoxKnowledge(
+                NoBoxGenerator(synthetic), len(synthetic)
+            ),
+        )
+
+    def setUp(self):
+        rows = []
+        for value in ["A", "B", "C"]:
+            rows += [(30, 102, value)] * 10
+            rows += [(25, 101, value)] * 10
+        self.synthetic = self._dataset(rows)
+        self.threat_model = self._threat_model(self.synthetic)
+        self.release = self.synthetic.view(columns=self.threat_model.relevant_cols)
+
+    def test_score_does_not_leak_the_sensitive_attribute(self):
+        attack = LocalNeighbourhoodAttack(radius=1, criterion=("threshold", 0.5))
+        attack.train(self.threat_model)
+        # The three targets differ only by their true value. 
+        for label in range(3):
+            self.threat_model.set_label(label)
+            scores = attack.attack_score([self.release])
+            self.assertEqual(scores.shape, (1, 3))
+            np.testing.assert_allclose(scores[0], np.full((3,), 1 / 3))
+
+    def test_score_follows_the_neighbourhood(self):
+        # Where the release *does* carry signal, the score must report it,
+        # identically for every target regardless of its true value.
+        synthetic = self._dataset([(30, 101, "B")] * 8 + [(30, 101, "A")] * 2)
+        threat_model = self._threat_model(synthetic)
+        release = synthetic.view(columns=threat_model.relevant_cols)
+        attack = LocalNeighbourhoodAttack(radius=0, criterion=("threshold", 0.5))
+        attack.train(threat_model)
+        for label in range(3):
+            threat_model.set_label(label)
+            np.testing.assert_allclose(
+                attack.attack_score([release])[0], [0.2, 0.8, 0.0]
+            )
+            self.assertEqual(attack.attack([release])[0], "B")
+
+    def test_missing_attribute_values_is_reported(self):
+        # attribute_values defaults to None on NoBoxThreatModelAIA.
+        attack = LocalNeighbourhoodAttack(radius=1, criterion=("threshold", 0.5))
+        attack.train(self._threat_model(self.synthetic, attribute_values=None))
+        with self.assertRaisesRegex(Exception, "attribute_values"):
+            attack.attack_score([self.release])
+
+    def test_mismatched_attribute_values_warns(self):
+        # Values of the wrong type match nothing, which would otherwise leave
+        # every score at zero and turn the prediction into a coin toss.
+        attack = LocalNeighbourhoodAttack(radius=1, criterion=("threshold", 0.5))
+        attack.train(self._threat_model(self.synthetic, attribute_values=[0, 1, 2]))
+        with self.assertWarns(UserWarning):
+            attack.attack_score([self.release])
+
+
+class TestNoBoxAIAAttacksAgree(TestCase):
+    """
+    Attack invariants for no-box attribute inference: the set of classes
+    comes from the threat model rather than from whichever values a release
+    happens to contain, predictions are values of the sensitive attribute, and
+    nothing fitted for one threat model survives into the next.
+
+    """
+
+    def _description(self, values):
+        return DataDescription([
+            {"name": "age", "type": "finite", "representation": [20, 25, 30, 35]},
+            {"name": "zip", "type": "finite", "representation": [101, 102, 103]},
+            {"name": "race", "type": "finite", "representation": [1, 2, 3]},
+            {"name": "sensitive", "type": "finite", "representation": list(values)},
+        ])
+
+    def _sample(self, n, values, seed, only=None):
+        rng = np.random.default_rng(seed)
+        return TabularDataset(
+            pd.DataFrame({
+                "age": rng.choice([20, 25, 30, 35], n),
+                "zip": rng.choice([101, 102, 103], n),
+                "race": rng.choice([1, 2, 3], n),
+                "sensitive": rng.choice(only if only else values, n),
+            }, columns=["age", "zip", "race", "sensitive"]),
+            self._description(values),
+        )
+
+    def _threat_model(self, values, quasi_identifiers, seed=0, only=None):
+        synthetic = self._sample(60, values, seed, only=only)
+        threat_model = NoBoxThreatModelAIA(
+            target_records=self._sample(10, values, seed + 1),
+            sensitive_attribute="sensitive",
+            quasi_identifiers=quasi_identifiers,
+            attribute_values=list(values),
+            attacker_knowledge_data=AuxiliaryDataKnowledge(
+                self._sample(20, values, seed + 2), auxiliary_split=0.5
+            ),
+            attacker_knowledge_generator=NoBoxKnowledge(
+                NoBoxGenerator(synthetic), len(synthetic)
+            ),
+        )
+        return threat_model, synthetic.view(columns=threat_model.relevant_cols)
+
+    def _attacks(self):
+        return [
+            MLInferenceAttack(),
+            GeneralizedCAPAttack(),
+            LocalNeighbourhoodAttack(radius=1, criterion=("threshold", 0.6)),
+        ]
+
+    def test_score_covers_every_declared_value(self):
+        # 'C' is declared but never appears in the release: the score must still
+        # have one entry per declared value, or a 3-class problem silently
+        # collapses into a binary one.
+        values = ["A", "B", "C"]
+        threat_model, release = self._threat_model(
+            values, ["age", "zip"], only=["A", "B"]
+        )
+        for attack in self._attacks():
+            attack.train(threat_model)
+            threat_model.set_label(0)
+            scores = attack.attack_score([release])
+            self.assertEqual(
+                np.shape(scores), (1, len(values)), msg=f"for {type(attack).__name__}"
+            )
+            # The absent value takes all of the remaining probability mass: none.
+            self.assertEqual(scores[0][2], 0.0, msg=f"for {type(attack).__name__}")
+
+    def test_predictions_are_attribute_values(self):
+        # Including for a binary attribute, where the score collapses to a
+        # scalar and the threshold path assigns the labels.
+        for values in (["A", "B", "C"], ["<=50K", ">50K"]):
+            threat_model, release = self._threat_model(values, ["age", "zip"])
+            for attack in self._attacks():
+                attack.train(threat_model)
+                threat_model.set_label(0)
+                prediction = attack.attack([release])[0]
+                self.assertIn(
+                    prediction, values,
+                    msg=f"{type(attack).__name__} with {len(values)} values",
+                )
+
+    def test_training_again_discards_the_previous_fit(self):
+        # 'zip' and 'race' have the same cardinality, so a stale model fitted on
+        # one would not be caught by a feature-count mismatch.
+        values = ["A", "B", "C"]
+        first, first_release = self._threat_model(values, ["age", "zip"])
+        second, second_release = self._threat_model(values, ["age", "race"])
+        for attack, reference in zip(self._attacks(), self._attacks()):
+            attack.train(first)
+            first.set_label(0)
+            attack.attack([first_release])
+            # Reuse the same object on a threat model with other features.
+            attack.train(second)
+            reference.train(second)
+            second.set_label(0)
+            self.assertEqual(
+                attack.attack([second_release])[0],
+                reference.attack([second_release])[0],
+                msg=f"for {type(attack).__name__}",
+            )
+
+
 ## Dummy data for AIA attacks. ------------------------------------------------------------------------
 dummy_data_aia_description = DataDescription([ 
             {"name": "age", "type": "real", "representation": "number"},
@@ -437,12 +626,21 @@ class TestGeneralizedCAP(TestCase):
         with self.assertRaises(ValueError):
             self.attack.train(mock_tm)
         
+        # Error if the threat model does not declare the possible values
+        no_values_tm = MagicMock(spec=NoBoxThreatModelAIA)
+        no_values_tm.sensitive_attribute = "sensitive"
+        no_values_tm.sensitive_attribute_type = "finite"
+        no_values_tm.attribute_values = None
+        with self.assertRaisesRegex(ValueError, "attribute_values"):
+            self.attack.train(no_values_tm)
+
         # Correct
         valid_tm = MagicMock(spec=NoBoxThreatModelAIA)
         valid_tm.sensitive_attribute = "sensitive"
         valid_tm.sensitive_attribute_type = "finite"
+        valid_tm.attribute_values = ["A", "B", "C"]
         self.attack.train(valid_tm)
-        self.assertTrue(self.attack.trained)        
+        self.assertTrue(self.attack.trained)
         
         
     def test_attack(self):
