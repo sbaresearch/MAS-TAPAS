@@ -1,26 +1,21 @@
-![tests](https://github.com/alan-turing-institute/privacy-sdg-toolbox/actions/workflows/ci.yml/badge.svg) [![Documentation Status](https://readthedocs.org/projects/tapas-privacy/badge/?version=latest)](https://tapas-privacy.readthedocs.io/en/latest/index.html)
+![tests](https://github.com/sbaresearch/MAS-TAPAS/actions/workflows/ci.yml/badge.svg) [![Documentation Status](https://readthedocs.org/projects/tapas-privacy/badge/?version=latest)](https://tapas-privacy.readthedocs.io/en/latest/index.html)
 
 # MAS-TAPAS: Extension of a Toolbox for Adversarial Privacy Auditing of Synthetic Data
 
 Evaluating the privacy of synthetic data with an adversarial toolbox. This code extends the TAPAS toolbox presented in [the associated paper](https://arxiv.org/abs/2211.06550) with additional attacks, threat models and metrics, including attacks provided in [Synth-MIA](https://github.com/joshward96/Synth-MIA) which are specific for the No-Box scenario. To ensure interoperability and align the evaluation frameworks, we implemented a custom integration wrapper and expanded the available threat models.
 
-[Documentation.](https://tapas-privacy.readthedocs.io/en/latest/index.html)
 
 
 ## Reference
 
-If you use this toolbox for a scientific publication, we kindly ask you to reference the paper:
+This repository builds on top of **TAPAS**, a toolbox for adversarial privacy auditing of synthetic data.
 
-	Houssiau, F., Jordon, J., Cohen, S.N., Daniel, O., Elliott, A., Geddes, J., Mole, C., Rangel-Smith, C. and Szpruch, L., 2022. _TAPAS: a toolbox for adversarial privacy auditing of synthetic data.
+Official [documentation](https://tapas-privacy.readthedocs.io/en/latest/index.html) of TAPAS.
 
-This extension also incorporates components from the following software:
+> Houssiau, F., Jordon, J., Cohen, S.N., Daniel, O., Elliott, A., Geddes, J., Mole, C., Rangel-Smith, C. and Szpruch, L., 2022. *TAPAS: a toolbox for adversarial privacy auditing of synthetic data.*
 
-  Ward, J. et al., 2025. Synth-MIA: A Privacy Leakage Auditing Tool for Synthetic Data. Source code available at https://github.com/joshward96/Synth-MIA.
-
-
-In `BibTex`:
-
-```
+In `BibTeX`:
+```bibtex
 @article{houssiau2022tapas,
   title={TAPAS: a toolbox for adversarial privacy auditing of synthetic data},
   author={Houssiau, F and Jordon, J and Cohen, SN and Daniel, O and Elliott, A and Geddes, J and Mole, C and Rangel-Smith, C and Szpruch, L},
@@ -28,6 +23,11 @@ In `BibTex`:
   publisher={Neural Information Processing Systems Foundation}
 }
 ```
+
+This project also incorporates components from the following software:
+
+- Ward, J. et al., 2025. *Synth-MIA: A Privacy Leakage Auditing Tool for Synthetic Data.* Source code available at [github.com/joshward96/Synth-MIA](https://github.com/joshward96/Synth-MIA).
+
 
 
 ## Direct Installation
@@ -45,13 +45,10 @@ poetry install
 ```
 from inside the project directory. This will create a virtual environment (default `.venv`), that can be accessed by running `poetry shell`, or in the usual way (with `source .venv/bin/activate`).
 
-#### Pip installation (includes command-line tool)
+#### Pip installation
 
 It is also possible to install from pip:
 ```
-pip install git+https://github.com/alan-turing-institute/privacy-sdg-toolbox
+pip install git+https://github.com/sbaresearch/MAS-TAPAS
 ```
 
-Doing so installs a command-line tool, `tapas`, somewhere in your path. (Eg, on
-a MacOS system with pip installed via homebrew, the tool ends up in a homebrew
-bin director.) 
