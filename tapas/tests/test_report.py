@@ -50,7 +50,12 @@ class MIAReportTest(unittest.TestCase):
             ]
         )
 
-        self.assertEqual(n_figures, 20)  # Added a dimension to plot.
+        # publish makes 6 comparisons, one figure per group of fixed columns:
+        # 2 (dataset-attack) + 3 (dataset-generator) + 6 (attack-generator)
+        # + 2 (dataset-attack) + 3 (dataset-generator) = 16, plus the
+        # dataset-target_id comparison, whose 4 groups all share a single
+        # filename and so overwrite each other into 1 figure.
+        self.assertEqual(n_figures, 17)
 
 
 class BoostrapReportTest(unittest.TestCase):
