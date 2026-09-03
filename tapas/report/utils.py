@@ -246,12 +246,13 @@ def metric_comparison_plots(
                 hue=marker_label,
                 order=np.unique(pair[comparison_label]),
                 ax=axs[i],
-                dodge=True,
+                
+                dodge=pair[marker_label].nunique() > 1,
                 # Disable lines between points for different x.
-                join=False,
+                linestyle="none",
                 # Plot the 95% confidence interval. In most cases, this will only
                 # appear when the corresponding Report uses sample bootstrapping.
-                errwidth=4,
+                err_kws={"linewidth": 4},
                 errorbar=('pi', 95),
             )
             axs[i].legend([], [], frameon=False)

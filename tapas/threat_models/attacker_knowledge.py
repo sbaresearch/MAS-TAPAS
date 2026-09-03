@@ -602,7 +602,7 @@ class LabelInferenceThreatModel(TrainableThreatModel):
                 )
                 raise ValueError(msg)
             if use_async:
-                gen_datasets = asyncio.get_event_loop().run_until_complete(
+                gen_datasets = asyncio.run(
                     self._async_generate_data(
                         training_datasets, training, gen_labels if use_memory else None
                     )

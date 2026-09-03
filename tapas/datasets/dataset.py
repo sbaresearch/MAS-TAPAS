@@ -701,14 +701,18 @@ class TabularRecord(TabularDataset):
 
         """
 
-        merged = pd.merge(tabular_dataset.data, self.data, how="outer", indicator=True)
+        index_column = "__tapas_index__"
+        left = tabular_dataset.data.copy()
+        left[index_column] = left.index
 
-        if merged[merged["_merge"] == "both"].shape[0] != 1:
+        merged = pd.merge(left, self.data, how="inner")
+
+        if merged.shape[0] != 1:
             raise AssertionError(
                 "Error, more than one copy of this record is present on the dataset"
             )
 
-        return merged[merged["_merge"] == "both"].index.values[0]
+        return merged[index_column].values[0]
 
     def set_id(self, identifier):
         """
