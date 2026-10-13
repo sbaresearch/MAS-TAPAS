@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "mas-tapas"
-version = "1.1.3"
+version = "1.1.4"
 description = "Extension of TAPAS, a toolbox for adversarial privacy auditing of synthetic tabular data."
 authors = ["Florimond Houussiau <fhoussiau@turing.ac.uk>", "James Jordon", "Callum Mole <cmole@turing.ac.uk>", "Camila Rangel-Smith <crangelsmith@turing.ac.uk>", "James Geddes <jgeddes@turing.ac.uk>", "Daniela Martinez Duarte <dmartinez@sba-research.org>"]
 packages = [{ include = "tapas" }]
