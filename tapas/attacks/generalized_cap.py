@@ -31,7 +31,7 @@ class GeneralizedCAPAttack(Attack):
         """Preprocessing pipeline for GCAP."""
         
         num_cols = df.select_dtypes(include=['number']).columns.tolist()
-        cat_cols = df.select_dtypes(include=['object', 'category']).columns.tolist()
+        cat_cols = df.select_dtypes(include=['object', 'string', 'category']).columns.tolist()
 
         num_pipe = Pipeline([
             ('imputer', SimpleImputer(strategy='mean')),

@@ -16,7 +16,7 @@ def fit_transformer(X, categorical_encoding='one-hot', numeric_encoding='standar
     Fit a ColumnTransformer on a single dataset.
     """
     numerical_cols = X.select_dtypes(include=['float64', 'int64']).columns.tolist()
-    categorical_cols = X.select_dtypes(include=['object', 'category']).columns.tolist()
+    categorical_cols = X.select_dtypes(include=['object', 'string', 'category']).columns.tolist()
 
     # Numeric transformer
     if numeric_encoding == 'standard':
